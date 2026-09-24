@@ -1,0 +1,605 @@
+<!-- admin-withdrawals.html - 提现审核 -->
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>提现审核</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    * { -webkit-tap-highlight-color: transparent; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei", sans-serif; }
+
+    /* 入场动画 */
+    .fade-in-up {
+      opacity: 0;
+      transform: translateY(12px);
+      animation: fadeInUp 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    }
+    .fade-in-up.d1 { animation-delay: 0.03s; }
+    .fade-in-up.d2 { animation-delay: 0.08s; }
+    .fade-in-up.d3 { animation-delay: 0.13s; }
+    .fade-in-up.d4 { animation-delay: 0.18s; }
+    .fade-in-up.d5 { animation-delay: 0.23s; }
+    .fade-in-up.d6 { animation-delay: 0.28s; }
+    .fade-in-up.d7 { animation-delay: 0.33s; }
+    .fade-in-up.d8 { animation-delay: 0.38s; }
+
+    @keyframes fadeInUp {
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    /* 卡片移除动画 */
+    .card-leave-active {
+      transition: all 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+      opacity: 1;
+      transform: translateX(0);
+    }
+    .card-leave-to {
+      opacity: 0;
+      transform: translateX(30px);
+      max-height: 0;
+      margin-bottom: 0;
+      padding-top: 0;
+      padding-bottom: 0;
+    }
+
+    /* 按钮缩放 */
+    .btn-press {
+      transition: all 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    .btn-press:active {
+      transform: scale(0.95);
+      opacity: 0.85;
+    }
+
+    /* 输入框焦点 */
+    .input-field {
+      transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    .input-field:focus {
+      border-color: #1a1a1a;
+      box-shadow: 0 0 0 4px rgba(0, 0, 0, 0.05);
+    }
+
+    /* 骨架屏 */
+    @keyframes shimmer {
+      0% { background-position: -200% 0; }
+      100% { background-position: 200% 0; }
+    }
+    .skeleton {
+      background: linear-gradient(90deg, #f3f4f6 25%, #e5e7eb 50%, #f3f4f6 75%);
+      background-size: 200% 100%;
+      animation: shimmer 1.5s infinite;
+      border-radius: 8px;
+    }
+
+    /* 底部安全区 */
+    .pb-safe {
+      padding-bottom: calc(20px + env(safe-area-inset-bottom));
+    }
+
+    /* 成功提示悬浮 */
+    .toast-enter-active,
+    .toast-leave-active {
+      transition: all 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    .toast-enter-from,
+    .toast-leave-to {
+      opacity: 0;
+      transform: translateX(-50%) translateY(-16px);
+    }
+    .toast-enter-to,
+    .toast-leave-from {
+      opacity: 1;
+      transform: translateX(-50%) translateY(0);
+    }
+
+    /* 模态框遮罩 */
+    .modal-backdrop {
+      background: rgba(0, 0, 0, 0.4);
+      backdrop-filter: blur(4px);
+      -webkit-backdrop-filter: blur(4px);
+    }
+
+    /* 模态框动画 */
+    .modal-enter-active,
+    .modal-leave-active {
+      transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    .modal-enter-from,
+    .modal-leave-to {
+      opacity: 0;
+      transform: translateY(20px) scale(0.96);
+    }
+    .modal-enter-to,
+    .modal-leave-from {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+    }
+
+    /* 加载旋转 */
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+    .spinner {
+      animation: spin 0.8s linear infinite;
+    }
+  </style>
+</head>
+<body class="bg-gray-50/50 min-h-screen pb-safe">
+  <div id="app">
+
+    <!-- 顶部导航栏 -->
+    <div class="bg-white sticky top-0 z-10 border-b border-gray-100 fade-in-up">
+      <div class="flex items-center px-4 h-14">
+        <button
+          @click="goBack"
+          class="w-10 h-10 flex items-center justify-center rounded-full hover:bg-gray-100 btn-press -ml-2"
+        >
+          <svg class="w-5 h-5 text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path>
+          </svg>
+        </button>
+        <h1 class="flex-1 text-center text-base font-semibold text-gray-900 pr-10">提现审核</h1>
+      </div>
+    </div>
+
+    <!-- 无权限提示 -->
+    <div v-if="authChecked && !isAdmin" class="pt-24 text-center px-6">
+      <div class="text-4xl mb-4">🔒</div>
+      <h3 class="text-lg font-medium text-gray-900 mb-2">您无权访问</h3>
+      <p class="text-gray-500 text-sm">正在返回...</p>
+    </div>
+
+    <template v-else-if="isAdmin">
+
+      <!-- 顶部统计 -->
+      <div class="px-4 py-4">
+        <div class="bg-white rounded-2xl p-4 border border-gray-100 fade-in-up d1">
+          <div class="flex items-center justify-between">
+            <div>
+              <p class="text-xs text-gray-400 mb-1">待审核提现</p>
+              <p class="text-2xl font-bold text-gray-900">{{ withdrawals.length }} <span class="text-sm font-normal text-gray-400">笔</span></p>
+            </div>
+            <div class="text-right">
+              <p class="text-xs text-gray-400 mb-1">待审核总额</p>
+              <p class="text-xl font-bold text-gray-900">¥{{ totalPending.toFixed(0) }}</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 提现列表 -->
+      <div class="px-4 pb-4">
+        <div class="flex items-center justify-between mb-3 fade-in-up d2">
+          <h2 class="text-sm font-medium text-gray-900">申请列表</h2>
+          <span class="text-xs text-gray-400">按申请时间排序</span>
+        </div>
+
+        <!-- 加载骨架 -->
+        <div v-if="loading" class="space-y-3">
+          <div v-for="i in 3" :key="i" class="bg-white rounded-2xl p-4 border border-gray-100 fade-in-up" :class="'d' + (i + 2)">
+            <div class="flex justify-between mb-3">
+              <div class="skeleton h-6 w-24"></div>
+              <div class="skeleton h-5 w-20"></div>
+            </div>
+            <div class="skeleton h-4 w-36 mb-2"></div>
+            <div class="skeleton h-4 w-28"></div>
+          </div>
+        </div>
+
+        <!-- 空状态 -->
+        <div v-else-if="withdrawals.length === 0" class="text-center py-16 fade-in-up d2">
+          <div class="text-5xl mb-3">✅</div>
+          <p class="text-gray-500 text-sm mb-1">暂无待审核提现</p>
+          <p class="text-gray-400 text-xs">所有申请已处理完毕</p>
+        </div>
+
+        <!-- 提现卡片列表 -->
+        <transition-group v-else name="card" tag="div" class="space-y-3">
+          <div
+            v-for="(wd, idx) in withdrawals"
+            :key="wd.id"
+            class="bg-white rounded-2xl p-4 border border-gray-100 fade-in-up"
+            :class="'d' + Math.min((idx % 5) + 3, 7)"
+          >
+            <!-- 顶部：金额 + 状态 -->
+            <div class="flex items-start justify-between mb-3">
+              <div>
+                <p class="text-xs text-gray-400 mb-0.5">申请提现金额</p>
+                <p class="text-2xl font-bold text-gray-900">¥{{ wd.amount.toFixed(0) }}</p>
+              </div>
+              <span class="inline-flex items-center px-2 py-0.5 bg-amber-50 text-amber-700 rounded-full text-xs font-medium">
+                待审核
+              </span>
+            </div>
+
+            <!-- 手续费 + 实到 -->
+            <div class="flex gap-4 mb-3 pb-3 border-b border-gray-50">
+              <div>
+                <p class="text-xs text-gray-400">手续费</p>
+                <p class="text-sm font-medium text-gray-600">¥{{ wd.fee?.toFixed(0) || '0' }}</p>
+              </div>
+              <div>
+                <p class="text-xs text-gray-400">实际到账</p>
+                <p class="text-sm font-medium text-green-600">¥{{ (wd.amount - (wd.fee || 0)).toFixed(0) }}</p>
+              </div>
+            </div>
+
+            <!-- 申请人信息 -->
+            <div class="space-y-1.5 mb-3">
+              <div class="flex justify-between items-center text-sm">
+                <span class="text-gray-400">申请人</span>
+                <span class="text-gray-700 font-medium">{{ maskPhone(wd.profile?.phone) }}</span>
+              </div>
+              <div class="flex justify-between items-center text-sm">
+                <span class="text-gray-400">收款方式</span>
+                <span class="text-gray-700">{{ payMethodText(wd.pay_method) }}</span>
+              </div>
+              <div class="flex justify-between items-center text-sm">
+                <span class="text-gray-400">收款账号</span>
+                <span class="text-gray-700 font-mono">{{ wd.pay_account }}</span>
+              </div>
+              <div class="flex justify-between items-center text-sm">
+                <span class="text-gray-400">收款人</span>
+                <span class="text-gray-700">{{ wd.pay_name || '-' }}</span>
+              </div>
+              <div class="flex justify-between items-center text-sm">
+                <span class="text-gray-400">申请时间</span>
+                <span class="text-gray-500 text-xs">{{ formatTime(wd.created_at) }}</span>
+              </div>
+            </div>
+
+            <!-- 操作按钮 -->
+            <div class="flex gap-3 mt-4 pt-3 border-t border-gray-50">
+              <button
+                @click="handleReject(wd)"
+                class="btn-press flex-1 py-2.5 bg-gray-100 text-gray-700 rounded-xl font-medium text-sm"
+              >
+                驳回
+              </button>
+              <button
+                @click="handleApprove(wd)"
+                :disabled="wd.auditing"
+                class="btn-press flex-1 py-2.5 bg-gray-900 text-white rounded-xl font-medium text-sm disabled:opacity-50"
+              >
+                <span v-if="wd.auditing" class="inline-flex items-center gap-1.5">
+                  <svg class="spinner w-4 h-4" viewBox="0 0 24 24" fill="none">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                  </svg>
+                  处理中
+                </span>
+                <span v-else>通过打款</span>
+              </button>
+            </div>
+          </div>
+        </transition-group>
+      </div>
+
+      <!-- 版权页脚 -->
+      <div class="text-center px-6 pt-4 fade-in-up d8">
+        <p class="text-sm text-gray-700 font-medium mb-1">希皓电竞</p>
+        <p class="text-xs text-gray-400 mb-1">希皓网游 提供技术支持</p>
+        <p class="text-[11px] text-gray-300 leading-relaxed">
+          Copyright © 2026 希皓电竞 All Rights Reserved.<br>
+          最终解释权归希皓电竞所有。
+        </p>
+      </div>
+
+    </template>
+
+    <!-- 驳回弹窗 -->
+    <transition name="modal">
+      <div v-if="showRejectModal" class="fixed inset-0 z-50 flex items-end sm:items-center justify-center modal-backdrop" @click.self="closeRejectModal">
+        <div class="bg-white w-full sm:max-w-sm sm:rounded-2xl rounded-t-2xl p-5 mx-0 sm:mx-4">
+          <h3 class="text-lg font-semibold text-gray-900 mb-1">驳回申请</h3>
+          <p class="text-sm text-gray-400 mb-4">请填写驳回原因，金额将退回用户余额</p>
+
+          <textarea
+            v-model="rejectReason"
+            placeholder="请输入驳回原因..."
+            rows="4"
+            class="input-field w-full px-3.5 py-3 bg-gray-50 border border-gray-200 rounded-xl text-sm text-gray-900 placeholder-gray-400 outline-none resize-none"
+            :class="{ 'border-red-300': rejectError }"
+            @input="rejectError = ''"
+          ></textarea>
+          <p v-if="rejectError" class="text-red-500 text-xs mt-1">{{ rejectError }}</p>
+
+          <div class="flex gap-3 mt-5">
+            <button
+              @click="closeRejectModal"
+              class="btn-press flex-1 py-3 bg-gray-100 text-gray-700 rounded-xl font-medium text-sm"
+            >
+              取消
+            </button>
+            <button
+              @click="submitReject"
+              :disabled="rejectSubmitting"
+              class="btn-press flex-1 py-3 bg-gray-900 text-white rounded-xl font-medium text-sm disabled:opacity-50"
+            >
+              <span v-if="rejectSubmitting" class="inline-flex items-center gap-1.5">
+                <svg class="spinner w-4 h-4" viewBox="0 0 24 24" fill="none">
+                  <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                  <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                </svg>
+                处理中
+              </span>
+              <span v-else>确认驳回</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </transition>
+
+    <!-- 成功提示 -->
+    <transition name="toast">
+      <div
+        v-if="toast.show"
+        class="fixed top-20 left-1/2 z-50 px-5 py-3 bg-gray-900 text-white rounded-full text-sm font-medium shadow-lg flex items-center gap-2"
+        style="transform: translateX(-50%)"
+      >
+        <svg class="w-4 h-4 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"></path>
+        </svg>
+        {{ toast.message }}
+      </div>
+    </transition>
+
+  </div>
+
+  <script>
+    const { createApp, ref, reactive, computed, onMounted } = Vue;
+
+    const SUPABASE_URL = 'https://cvcerkgcstvnqiqsmkj.supabase.co';
+    const SUPABASE_ANON_KEY = 'sb_publishable_H9iztdbCiT4xu566vfIQ8Q_d66u1_aQ';
+
+    const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+    createApp({
+      setup() {
+        const withdrawals = ref([]);
+        const loading = ref(true);
+        const isAdmin = ref(false);
+        const authChecked = ref(false);
+
+        // 驳回弹窗
+        const showRejectModal = ref(false);
+        const currentWithdraw = ref(null);
+        const rejectReason = ref('');
+        const rejectError = ref('');
+        const rejectSubmitting = ref(false);
+
+        // toast
+        const toast = reactive({
+          show: false,
+          message: ''
+        });
+
+        // 待审核总额
+        const totalPending = computed(() => {
+          return withdrawals.value.reduce((sum, wd) => sum + (wd.amount || 0), 0);
+        });
+
+        // 检查登录
+        const checkAuth = () => {
+          const token = localStorage.getItem('access_token');
+          if (!token) {
+            window.location.href = 'client-login.html';
+            return false;
+          }
+          return true;
+        };
+
+        // 检查管理员权限
+        const checkAdmin = async () => {
+          try {
+            const userId = localStorage.getItem('user_id');
+            const { data, error } = await supabase
+              .from('profiles')
+              .select('role')
+              .eq('id', userId)
+              .single();
+
+            if (error) throw error;
+            isAdmin.value = data?.role === 'admin';
+
+            if (!isAdmin.value) {
+              setTimeout(() => {
+                window.location.href = 'client-home.html';
+              }, 2000);
+            }
+          } catch (err) {
+            console.error('权限检查失败:', err);
+            isAdmin.value = false;
+            setTimeout(() => {
+              window.location.href = 'client-home.html';
+            }, 2000);
+          } finally {
+            authChecked.value = true;
+          }
+        };
+
+        // 获取待审核提现列表（关联查询 profiles 表）
+        const fetchWithdrawals = async () => {
+          loading.value = true;
+          try {
+            const { data, error } = await supabase
+              .from('withdrawals')
+              .select(`
+                id,
+                user_id,
+                amount,
+                fee,
+                pay_method,
+                pay_account,
+                pay_name,
+                status,
+                created_at,
+                profile:profiles!withdrawals_user_id_fkey (phone)
+              `)
+              .eq('status', 'pending')
+              .order('created_at', { ascending: true });
+
+            if (error) throw error;
+            withdrawals.value = (data || []).map(w => ({
+              ...w,
+              auditing: false
+            }));
+          } catch (err) {
+            console.error('获取提现列表失败:', err);
+            withdrawals.value = [];
+          } finally {
+            loading.value = false;
+          }
+        };
+
+        // 手机号脱敏
+        const maskPhone = (phone) => {
+          if (!phone) return '-';
+          const s = phone.toString();
+          if (s.length < 7) return s;
+          return s.slice(0, 3) + '****' + s.slice(-4);
+        };
+
+        // 收款方式文本
+        const payMethodText = (method) => {
+          const map = {
+            alipay: '支付宝',
+            wechat: '微信',
+            bank: '银行卡'
+          };
+          return map[method] || method || '-';
+        };
+
+        // 格式化时间
+        const formatTime = (dateStr) => {
+          if (!dateStr) return '';
+          const d = new Date(dateStr);
+          const pad = (n) => n.toString().padStart(2, '0');
+          return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+        };
+
+        // 显示成功提示
+        const showToast = (msg) => {
+          toast.message = msg;
+          toast.show = true;
+          setTimeout(() => {
+            toast.show = false;
+          }, 1800);
+        };
+
+        // 通过打款
+        const handleApprove = async (wd) => {
+          if (!confirm(`确定通过 ¥${wd.amount.toFixed(0)} 的提现申请吗？\n请确认已完成实际转账。`)) return;
+
+          wd.auditing = true;
+          try {
+            const { data, error } = await supabase
+              .rpc('rpc_admin_audit_withdrawal', {
+                p_withdraw_id: wd.id,
+                p_audit_status: 'approved',
+                p_remark: '审核通过，已打款'
+              });
+
+            if (error) throw error;
+
+            // 从列表移除
+            withdrawals.value = withdrawals.value.filter(w => w.id !== wd.id);
+            showToast('已通过，余额已结算');
+          } catch (err) {
+            console.error('审核失败:', err);
+            alert(err.message || '操作失败，请重试');
+          } finally {
+            wd.auditing = false;
+          }
+        };
+
+        // 打开驳回弹窗
+        const handleReject = (wd) => {
+          currentWithdraw.value = wd;
+          rejectReason.value = '';
+          rejectError.value = '';
+          showRejectModal.value = true;
+        };
+
+        const closeRejectModal = () => {
+          if (rejectSubmitting.value) return;
+          showRejectModal.value = false;
+          currentWithdraw.value = null;
+        };
+
+        // 提交驳回
+        const submitReject = async () => {
+          if (!rejectReason.value.trim()) {
+            rejectError.value = '请填写驳回原因';
+            return;
+          }
+
+          rejectSubmitting.value = true;
+          try {
+            const { error } = await supabase
+              .rpc('rpc_admin_audit_withdrawal', {
+                p_withdraw_id: currentWithdraw.value.id,
+                p_audit_status: 'rejected',
+                p_remark: rejectReason.value.trim()
+              });
+
+            if (error) throw error;
+
+            // 从列表移除
+            const id = currentWithdraw.value.id;
+            withdrawals.value = withdrawals.value.filter(w => w.id !== id);
+
+            showRejectModal.value = false;
+            currentWithdraw.value = null;
+            showToast('已驳回，余额已退回');
+          } catch (err) {
+            console.error('驳回失败:', err);
+            alert(err.message || '操作失败，请重试');
+          } finally {
+            rejectSubmitting.value = false;
+          }
+        };
+
+        // 返回
+        const goBack = () => {
+          window.location.href = 'admin-home.html';
+        };
+
+        onMounted(async () => {
+          if (!checkAuth()) return;
+          await checkAdmin();
+          if (isAdmin.value) {
+            fetchWithdrawals();
+          }
+        });
+
+        return {
+          withdrawals,
+          loading,
+          isAdmin,
+          authChecked,
+          totalPending,
+          showRejectModal,
+          rejectReason,
+          rejectError,
+          rejectSubmitting,
+          toast,
+          maskPhone,
+          payMethodText,
+          formatTime,
+          handleApprove,
+          handleReject,
+          closeRejectModal,
+          submitReject,
+          goBack
+        };
+      }
+    }).mount('#app');
+  </script>
+</body>
+</html>

@@ -1,0 +1,507 @@
+<!-- admin-boosters.html - 打手审核管理 -->
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>打手审核</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    * { -webkit-tap-highlight-color: transparent; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei", sans-serif; }
+
+    /* 入场动画 */
+    .fade-in-up {
+      opacity: 0;
+      transform: translateY(12px);
+      animation: fadeInUp 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    }
+    .fade-in-up.d1 { animation-delay: 0.03s; }
+    .fade-in-up.d2 { animation-delay: 0.08s; }
+    .fade-in-up.d3 { animation-delay: 0.13s; }
+    .fade-in-up.d4 { animation-delay: 0.18s; }
+    .fade-in-up.d5 { animation-delay: 0.23s; }
+    .fade-in-up.d6 { animation-delay: 0.28s; }
+    .fade-in-up.d7 { animation-delay: 0.33s; }
+
+    @keyframes fadeInUp {
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    /* 按钮缩放 */
+    .btn-press {
+      transition: all 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    .btn-press:active {
+      transform: scale(0.95);
+      opacity: 0.85;
+    }
+
+    /* 骨架屏 */
+    @keyframes shimmer {
+      0% { background-position: -200% 0; }
+      100% { background-position: 200% 0; }
+    }
+    .skeleton {
+      background: linear-gradient(90deg, #f3f4f6 25%, #e5e7eb 50%, #f3f4f6 75%);
+      background-size: 200% 100%;
+      animation: shimmer 1.5s infinite;
+      border-radius: 8px;
+    }
+
+    /* 底部安全区 */
+    .pb-safe {
+      padding-bottom: calc(20px + env(safe-area-inset-bottom));
+    }
+
+    /* 弹窗动画 */
+    .modal-overlay {
+      animation: fadeIn 0.2s ease;
+    }
+    .modal-content {
+      animation: modalIn 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    @keyframes fadeIn {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+    @keyframes modalIn {
+      from { opacity: 0; transform: scale(0.9) translateY(10px); }
+      to { opacity: 1; transform: scale(1) translateY(0); }
+    }
+
+    /* 加载旋转 */
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+    .spinner {
+      animation: spin 0.8s linear infinite;
+    }
+  </style>
+</head>
+<body class="bg-gray-50/50 min-h-screen pb-safe">
+  <div id="app">
+
+    <!-- 顶部导航栏 -->
+    <div class="bg-white sticky top-0 z-10 border-b border-gray-100 fade-in-up">
+      <div class="flex items-center px-4 h-14">
+        <button
+          @click="goBack"
+          class="w-10 h-10 flex items-center justify-center rounded-full hover:bg-gray-100 btn-press -ml-2"
+        >
+          <svg class="w-5 h-5 text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path>
+          </svg>
+        </button>
+        <h1 class="flex-1 text-center text-base font-semibold text-gray-900 pr-10">打手审核</h1>
+      </div>
+    </div>
+
+    <!-- 无权限提示 -->
+    <div v-if="authChecked && !isAdmin" class="pt-24 text-center px-6">
+      <div class="text-4xl mb-4">🔒</div>
+      <h3 class="text-lg font-medium text-gray-900 mb-2">您无权访问</h3>
+      <p class="text-gray-500 text-sm">正在返回...</p>
+    </div>
+
+    <!-- 审核列表 -->
+    <template v-else-if="isAdmin">
+      <div class="px-4 py-4">
+
+        <!-- 数量提示 -->
+        <div v-if="!loading && boosters.length > 0" class="mb-3 fade-in-up d1">
+          <span class="text-xs text-gray-500">共 {{ boosters.length }} 条待审核</span>
+        </div>
+
+        <!-- 加载骨架 -->
+        <div v-if="loading" class="space-y-3">
+          <div v-for="i in 3" :key="i" class="bg-white rounded-2xl p-5 border border-gray-100 fade-in-up" :class="'d' + i">
+            <div class="flex justify-between mb-3">
+              <div class="skeleton h-5 w-24"></div>
+              <div class="skeleton h-4 w-16"></div>
+            </div>
+            <div class="skeleton h-4 w-40 mb-2"></div>
+            <div class="skeleton h-4 w-32 mb-2"></div>
+            <div class="skeleton h-4 w-full mb-3"></div>
+            <div class="flex gap-2">
+              <div class="skeleton h-9 flex-1 rounded-xl"></div>
+              <div class="skeleton h-9 flex-1 rounded-xl"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 空状态 -->
+        <div v-else-if="boosters.length === 0" class="pt-20 text-center fade-in-up d2">
+          <div class="text-5xl mb-4">✅</div>
+          <h3 class="text-lg font-medium text-gray-900 mb-2">暂无待审核申请</h3>
+          <p class="text-gray-500 text-sm">新的入驻申请会出现在这里</p>
+        </div>
+
+        <!-- 打手卡片列表 -->
+        <div v-else class="space-y-3">
+          <div
+            v-for="(booster, idx) in boosters"
+            :key="booster.id"
+            class="bg-white rounded-2xl p-5 border border-gray-100 fade-in-up"
+            :class="'d' + Math.min((idx % 5) + 2, 6)"
+          >
+            <!-- 顶部：姓名 + 申请时间 -->
+            <div class="flex items-start justify-between mb-4">
+              <div>
+                <h3 class="text-base font-semibold text-gray-900">{{ maskName(booster.real_name) }}</h3>
+                <p class="text-xs text-gray-400 mt-0.5 font-mono">{{ formatTime(booster.created_at) }}</p>
+              </div>
+              <span class="inline-flex items-center px-2.5 py-1 bg-yellow-50 text-yellow-700 text-xs font-medium rounded-full">
+                待审核
+              </span>
+            </div>
+
+            <!-- 信息列表 -->
+            <div class="space-y-2.5 mb-4">
+              <div class="flex">
+                <span class="text-xs text-gray-400 w-20 flex-shrink-0">身份证号</span>
+                <span class="text-xs text-gray-700 font-mono">{{ maskIdCard(booster.id_card) }}</span>
+              </div>
+              <div class="flex">
+                <span class="text-xs text-gray-400 w-20 flex-shrink-0">游戏昵称</span>
+                <span class="text-xs text-gray-700">{{ booster.game_id || '-' }}</span>
+              </div>
+              <div class="flex">
+                <span class="text-xs text-gray-400 w-20 flex-shrink-0">游戏数字ID</span>
+                <span class="text-xs text-gray-700 font-mono">{{ booster.game_rank || '-' }}</span>
+              </div>
+              <div class="flex">
+                <span class="text-xs text-gray-400 w-20 flex-shrink-0">性别</span>
+                <span class="text-xs text-gray-700">{{ booster.maps || '-' }}</span>
+              </div>
+              <div class="flex">
+                <span class="text-xs text-gray-400 w-20 flex-shrink-0">保证金</span>
+                <span class="text-xs text-gray-700">¥{{ (booster.deposit || 0).toFixed(2) }}</span>
+              </div>
+              <div v-if="booster.experience" class="flex">
+                <span class="text-xs text-gray-400 w-20 flex-shrink-0">补充说明</span>
+                <span class="text-xs text-gray-700 flex-1 leading-relaxed">{{ booster.experience }}</span>
+              </div>
+            </div>
+
+            <!-- 操作按钮 -->
+            <div class="flex gap-2 pt-3 border-t border-gray-50">
+              <button
+                @click="handleApprove(booster)"
+                :disabled="auditingId === booster.id"
+                class="btn-press flex-1 py-2.5 bg-green-500 text-white rounded-xl font-medium text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <span v-if="auditingId === booster.id && auditAction === 'approve'" class="inline-flex items-center gap-1">
+                  <svg class="spinner w-4 h-4" viewBox="0 0 24 24" fill="none">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                  </svg>
+                </span>
+                <span v-else>通过</span>
+              </button>
+              <button
+                @click="showRejectModal(booster)"
+                :disabled="auditingId === booster.id"
+                class="btn-press flex-1 py-2.5 bg-gray-100 text-gray-700 rounded-xl font-medium text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                驳回
+              </button>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- 版权页脚 -->
+      <div class="text-center px-6 pt-6 fade-in-up d7">
+        <p class="text-sm text-gray-700 font-medium mb-1">希皓电竞</p>
+        <p class="text-xs text-gray-400 mb-1">希皓网游 提供技术支持</p>
+        <p class="text-[11px] text-gray-300 leading-relaxed">
+          Copyright © 2026 希皓电竞 All Rights Reserved.<br>
+          最终解释权归希皓电竞所有。
+        </p>
+      </div>
+    </template>
+
+    <!-- 驳回原因弹窗 -->
+    <div
+      v-if="showRejectDialog"
+      class="fixed inset-0 z-50 flex items-center justify-center px-6 modal-overlay"
+      style="background: rgba(0,0,0,0.4);"
+      @click.self="showRejectDialog = false"
+    >
+      <div class="modal-content bg-white rounded-3xl p-6 w-full max-w-sm">
+        <h3 class="text-lg font-semibold text-gray-900 mb-2">驳回申请</h3>
+        <p class="text-gray-500 text-sm mb-4">请填写驳回原因，将告知申请人</p>
+
+        <textarea
+          v-model="rejectReason"
+          rows="4"
+          placeholder="请输入驳回原因..."
+          class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-gray-900 placeholder-gray-400 outline-none text-sm resize-none focus:border-gray-400 transition-colors"
+          :class="{ 'border-red-300': rejectError }"
+        ></textarea>
+        <p v-if="rejectError" class="text-red-500 text-xs mt-1.5">{{ rejectError }}</p>
+
+        <div class="flex gap-2 mt-5">
+          <button
+            @click="showRejectDialog = false"
+            class="btn-press flex-1 py-3 bg-gray-100 text-gray-700 rounded-xl font-medium text-sm"
+          >
+            取消
+          </button>
+          <button
+            @click="confirmReject"
+            :disabled="submittingReject"
+            class="btn-press flex-1 py-3 bg-red-500 text-white rounded-xl font-medium text-sm disabled:opacity-50"
+          >
+            <span v-if="submittingReject" class="inline-flex items-center gap-1">
+              <svg class="spinner w-4 h-4" viewBox="0 0 24 24" fill="none">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+              </svg>
+            </span>
+            <span v-else>确认驳回</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 操作成功提示 -->
+    <div
+      v-if="successMsg"
+      class="fixed top-20 left-1/2 -translate-x-1/2 z-50 bg-green-500 text-white px-6 py-3 rounded-full text-sm font-medium shadow-lg modal-content"
+    >
+      {{ successMsg }}
+    </div>
+
+  </div>
+
+  <script>
+    const { createApp, ref, onMounted } = Vue;
+
+    const SUPABASE_URL = 'https://cvcerkgcstvnqiqsmkj.supabase.co';
+    const SUPABASE_ANON_KEY = 'sb_publishable_H9iztdbCiT4xu566vfIQ8Q_d66u1_aQ';
+
+    const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+    createApp({
+      setup() {
+        const boosters = ref([]);
+        const loading = ref(true);
+        const isAdmin = ref(false);
+        const authChecked = ref(false);
+        const auditingId = ref(null);
+        const auditAction = ref('');
+        const successMsg = ref('');
+
+        // 驳回弹窗
+        const showRejectDialog = ref(false);
+        const currentBooster = ref(null);
+        const rejectReason = ref('');
+        const rejectError = ref('');
+        const submittingReject = ref(false);
+
+        // 姓名脱敏（保留姓氏）
+        const maskName = (name) => {
+          if (!name) return '-';
+          if (name.length <= 1) return name + '*';
+          return name.charAt(0) + '*'.repeat(name.length - 1);
+        };
+
+        // 身份证脱敏：前3后4
+        const maskIdCard = (idCard) => {
+          if (!idCard) return '-';
+          if (idCard.length < 7) return idCard;
+          return idCard.slice(0, 3) + '*'.repeat(idCard.length - 7) + idCard.slice(-4);
+        };
+
+        // 格式化时间
+        const formatTime = (timeStr) => {
+          if (!timeStr) return '';
+          const d = new Date(timeStr);
+          const m = String(d.getMonth() + 1).padStart(2, '0');
+          const day = String(d.getDate()).padStart(2, '0');
+          const h = String(d.getHours()).padStart(2, '0');
+          const min = String(d.getMinutes()).padStart(2, '0');
+          return `${m}-${day} ${h}:${min}`;
+        };
+
+        // 检查登录
+        const checkAuth = () => {
+          const token = localStorage.getItem('access_token');
+          if (!token) {
+            window.location.href = 'client-login.html';
+            return false;
+          }
+          return true;
+        };
+
+        // 检查管理员权限
+        const checkAdmin = async () => {
+          try {
+            const userId = localStorage.getItem('user_id');
+            const { data, error } = await supabase
+              .from('profiles')
+              .select('role')
+              .eq('id', userId)
+              .single();
+
+            if (error) throw error;
+            isAdmin.value = data?.role === 'admin';
+
+            if (!isAdmin.value) {
+              setTimeout(() => {
+                window.location.href = 'client-home.html';
+              }, 2000);
+            }
+          } catch (err) {
+            console.error('权限检查失败:', err);
+            isAdmin.value = false;
+            setTimeout(() => {
+              window.location.href = 'client-home.html';
+            }, 2000);
+          } finally {
+            authChecked.value = true;
+          }
+        };
+
+        // 获取待审核打手列表
+        const fetchBoosters = async () => {
+          loading.value = true;
+          try {
+            const { data, error } = await supabase
+              .from('boosters')
+              .select('id, user_id, real_name, id_card, game_id, game_rank, maps, experience, deposit, created_at')
+              .eq('audit_status', 'pending')
+              .order('created_at', { ascending: true });
+
+            if (error) throw error;
+            boosters.value = data || [];
+          } catch (err) {
+            console.error('获取待审核列表失败:', err);
+            boosters.value = [];
+          } finally {
+            loading.value = false;
+          }
+        };
+
+        // 显示成功提示
+        const showSuccess = (msg) => {
+          successMsg.value = msg;
+          setTimeout(() => {
+            successMsg.value = '';
+          }, 2000);
+        };
+
+        // 通过审核
+        const handleApprove = async (booster) => {
+          if (auditingId.value) return;
+          if (!confirm(`确定通过 ${maskName(booster.real_name)} 的入驻申请？`)) return;
+
+          auditingId.value = booster.id;
+          auditAction.value = 'approve';
+
+          try {
+            const { error } = await supabase.rpc('rpc_admin_audit_booster', {
+              p_booster_id: booster.id,
+              p_audit_status: 'approved',
+              p_remark: ''
+            });
+
+            if (error) throw error;
+
+            showSuccess('已通过审核');
+            // 从列表移除
+            boosters.value = boosters.value.filter(b => b.id !== booster.id);
+          } catch (err) {
+            console.error('审核失败:', err);
+            alert(err.message || '操作失败，请重试');
+          } finally {
+            auditingId.value = null;
+            auditAction.value = '';
+          }
+        };
+
+        // 显示驳回弹窗
+        const showRejectModal = (booster) => {
+          currentBooster.value = booster;
+          rejectReason.value = '';
+          rejectError.value = '';
+          showRejectDialog.value = true;
+        };
+
+        // 确认驳回
+        const confirmReject = async () => {
+          rejectError.value = '';
+          if (!rejectReason.value.trim()) {
+            rejectError.value = '请填写驳回原因';
+            return;
+          }
+          if (rejectReason.value.trim().length < 2) {
+            rejectError.value = '驳回原因至少 2 个字';
+            return;
+          }
+
+          submittingReject.value = true;
+          try {
+            const { error } = await supabase.rpc('rpc_admin_audit_booster', {
+              p_booster_id: currentBooster.value.id,
+              p_audit_status: 'rejected',
+              p_remark: rejectReason.value.trim()
+            });
+
+            if (error) throw error;
+
+            showSuccess('已驳回');
+            showRejectDialog.value = false;
+            // 从列表移除
+            boosters.value = boosters.value.filter(b => b.id !== currentBooster.value.id);
+          } catch (err) {
+            console.error('驳回失败:', err);
+            rejectError.value = err.message || '操作失败，请重试';
+          } finally {
+            submittingReject.value = false;
+          }
+        };
+
+        // 返回
+        const goBack = () => {
+          window.location.href = 'admin-home.html';
+        };
+
+        onMounted(async () => {
+          if (!checkAuth()) return;
+          await checkAdmin();
+          if (isAdmin.value) {
+            fetchBoosters();
+          }
+        });
+
+        return {
+          boosters,
+          loading,
+          isAdmin,
+          authChecked,
+          auditingId,
+          auditAction,
+          successMsg,
+          showRejectDialog,
+          rejectReason,
+          rejectError,
+          submittingReject,
+          maskName,
+          maskIdCard,
+          formatTime,
+          handleApprove,
+          showRejectModal,
+          confirmReject,
+          goBack
+        };
+      }
+    }).mount('#app');
+  </script>
+</body>
+</html>

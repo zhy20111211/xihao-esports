@@ -1,0 +1,430 @@
+<!-- admin-home.html - 管理端工作台首页 -->
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>管理后台</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    * { -webkit-tap-highlight-color: transparent; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei", sans-serif; }
+
+    /* 入场动画 */
+    .fade-in-up {
+      opacity: 0;
+      transform: translateY(16px);
+      animation: fadeInUp 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    }
+    .fade-in-up.d1 { animation-delay: 0.03s; }
+    .fade-in-up.d2 { animation-delay: 0.08s; }
+    .fade-in-up.d3 { animation-delay: 0.13s; }
+    .fade-in-up.d4 { animation-delay: 0.18s; }
+    .fade-in-up.d5 { animation-delay: 0.23s; }
+    .fade-in-up.d6 { animation-delay: 0.28s; }
+    .fade-in-up.d7 { animation-delay: 0.33s; }
+    .fade-in-up.d8 { animation-delay: 0.38s; }
+
+    @keyframes fadeInUp {
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    /* 卡片点击反馈 */
+    .menu-card {
+      transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    .menu-card:active {
+      transform: scale(0.97);
+      background-color: #f9fafb;
+    }
+
+    /* 按钮缩放 */
+    .btn-press {
+      transition: all 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    .btn-press:active {
+      transform: scale(0.95);
+      opacity: 0.85;
+    }
+
+    /* 骨架屏 */
+    @keyframes shimmer {
+      0% { background-position: -200% 0; }
+      100% { background-position: 200% 0; }
+    }
+    .skeleton {
+      background: linear-gradient(90deg, #f3f4f6 25%, #e5e7eb 50%, #f3f4f6 75%);
+      background-size: 200% 100%;
+      animation: shimmer 1.5s infinite;
+      border-radius: 8px;
+    }
+
+    /* 数字等宽 */
+    .tabular { font-variant-numeric: tabular-nums; }
+
+    /* 底部安全区 */
+    .pb-safe {
+      padding-bottom: calc(20px + env(safe-area-inset-bottom));
+    }
+
+    /* 红点徽标 */
+    .badge-dot {
+      position: absolute;
+      top: -2px;
+      right: -2px;
+      width: 8px;
+      height: 8px;
+      background: #ef4444;
+      border-radius: 50%;
+      border: 2px solid white;
+    }
+  </style>
+</head>
+<body class="bg-gray-50/50 min-h-screen pb-safe">
+  <div id="app">
+
+    <!-- 加载中 -->
+    <div v-if="loading" class="px-6 pt-12">
+      <div class="skeleton h-6 w-24 mb-2 fade-in-up"></div>
+      <div class="skeleton h-8 w-40 mb-6 fade-in-up d1"></div>
+      <div class="grid grid-cols-2 gap-3">
+        <div v-for="i in 4" :key="i" class="bg-white rounded-2xl p-4 border border-gray-100 fade-in-up" :class="'d' + (i + 1)">
+          <div class="skeleton h-3 w-16 mb-3"></div>
+          <div class="skeleton h-7 w-12"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 非管理员提示 -->
+    <template v-else-if="!isAdmin">
+      <div class="min-h-screen flex flex-col items-center justify-center px-8 text-center">
+        <div class="fade-in-up">
+          <div class="w-24 h-24 mx-auto mb-6 bg-red-50 rounded-full flex items-center justify-center">
+            <svg class="w-12 h-12 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path>
+            </svg>
+          </div>
+          <h2 class="text-xl font-semibold text-gray-900 mb-3">您无权访问管理后台</h2>
+          <p class="text-gray-500 text-sm leading-relaxed mb-8">
+            正在返回首页...
+          </p>
+        </div>
+      </div>
+    </template>
+
+    <!-- 管理后台主体 -->
+    <template v-else>
+
+      <!-- 顶部信息区 -->
+      <div class="bg-white px-6 pt-12 pb-6 fade-in-up">
+        <div class="flex items-start justify-between mb-5">
+          <div>
+            <p class="text-gray-500 text-sm mb-1">管理后台 ⚙️</p>
+            <h1 class="text-xl font-semibold text-gray-900 tabular">{{ maskedPhone }}</h1>
+          </div>
+          <button
+            @click="handleLogout"
+            class="text-gray-400 text-sm btn-press px-3 py-1.5 rounded-lg hover:bg-gray-100"
+          >
+            退出
+          </button>
+        </div>
+      </div>
+
+      <!-- 数据概览卡片 -->
+      <div class="px-6 py-5">
+        <h2 class="text-base font-semibold text-gray-900 mb-4 fade-in-up d1">数据概览</h2>
+        <div class="grid grid-cols-2 gap-3">
+
+          <!-- 待审核打手 -->
+          <div class="bg-white rounded-2xl p-4 border border-gray-100 fade-in-up d2">
+            <p class="text-xs text-gray-400 mb-2">待审核打手</p>
+            <p v-if="!statsLoaded" class="text-2xl font-bold text-gray-300">--</p>
+            <p v-else class="text-2xl font-bold text-orange-500 tabular">{{ stats.pendingBoosters }}</p>
+          </div>
+
+          <!-- 待接单订单 -->
+          <div class="bg-white rounded-2xl p-4 border border-gray-100 fade-in-up d3">
+            <p class="text-xs text-gray-400 mb-2">待接单订单</p>
+            <p v-if="!statsLoaded" class="text-2xl font-bold text-gray-300">--</p>
+            <p v-else class="text-2xl font-bold text-blue-500 tabular">{{ stats.pendingOrders }}</p>
+          </div>
+
+          <!-- 待审核提现 -->
+          <div class="bg-white rounded-2xl p-4 border border-gray-100 fade-in-up d4">
+            <p class="text-xs text-gray-400 mb-2">待审核提现</p>
+            <p v-if="!statsLoaded" class="text-2xl font-bold text-gray-300">--</p>
+            <p v-else class="text-2xl font-bold text-green-500 tabular">{{ stats.pendingWithdrawals }}</p>
+          </div>
+
+          <!-- 今日新增订单 -->
+          <div class="bg-white rounded-2xl p-4 border border-gray-100 fade-in-up d5">
+            <p class="text-xs text-gray-400 mb-2">今日新增订单</p>
+            <p v-if="!statsLoaded" class="text-2xl font-bold text-gray-300">--</p>
+            <p v-else class="text-2xl font-bold text-purple-500 tabular">{{ stats.todayOrders }}</p>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- 功能入口 -->
+      <div class="px-6">
+        <h2 class="text-base font-semibold text-gray-900 mb-4 fade-in-up d6">管理功能</h2>
+        <div class="bg-white rounded-2xl border border-gray-100 overflow-hidden fade-in-up d7">
+
+          <!-- 套餐管理 -->
+          <div
+            @click="goPage('admin-packages.html')"
+            class="menu-card flex items-center px-5 py-4 border-b border-gray-50 cursor-pointer"
+          >
+            <span class="text-2xl mr-4">📦</span>
+            <span class="flex-1 text-sm font-medium text-gray-900">套餐管理</span>
+            <svg class="w-4 h-4 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
+            </svg>
+          </div>
+
+          <!-- 卡密管理 -->
+          <div
+            @click="goPage('admin-cards.html')"
+            class="menu-card flex items-center px-5 py-4 border-b border-gray-50 cursor-pointer"
+          >
+            <span class="text-2xl mr-4">🎫</span>
+            <span class="flex-1 text-sm font-medium text-gray-900">卡密管理</span>
+            <svg class="w-4 h-4 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
+            </svg>
+          </div>
+
+          <!-- 打手审核 -->
+          <div
+            @click="goPage('admin-boosters.html')"
+            class="menu-card flex items-center px-5 py-4 border-b border-gray-50 cursor-pointer relative"
+          >
+            <span class="text-2xl mr-4">👤</span>
+            <span class="flex-1 text-sm font-medium text-gray-900">打手审核</span>
+            <span v-if="stats.pendingBoosters > 0" class="bg-red-500 text-white text-xs px-2 py-0.5 rounded-full mr-2 tabular">
+              {{ stats.pendingBoosters }}
+            </span>
+            <svg class="w-4 h-4 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
+            </svg>
+          </div>
+
+          <!-- 提现审核 -->
+          <div
+            @click="goPage('admin-withdrawals.html')"
+            class="menu-card flex items-center px-5 py-4 border-b border-gray-50 cursor-pointer"
+          >
+            <span class="text-2xl mr-4">💰</span>
+            <span class="flex-1 text-sm font-medium text-gray-900">提现审核</span>
+            <span v-if="stats.pendingWithdrawals > 0" class="bg-red-500 text-white text-xs px-2 py-0.5 rounded-full mr-2 tabular">
+              {{ stats.pendingWithdrawals }}
+            </span>
+            <svg class="w-4 h-4 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
+            </svg>
+          </div>
+
+          <!-- 订单管理 -->
+          <div
+            @click="goPage('admin-orders.html')"
+            class="menu-card flex items-center px-5 py-4 cursor-pointer"
+          >
+            <span class="text-2xl mr-4">📋</span>
+            <span class="flex-1 text-sm font-medium text-gray-900">订单管理</span>
+            <svg class="w-4 h-4 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
+            </svg>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- 版权页脚 -->
+      <div class="text-center px-6 pt-8 fade-in-up d8">
+        <p class="text-sm text-gray-700 font-medium mb-1">希皓电竞</p>
+        <p class="text-xs text-gray-400 mb-1">希皓网游 提供技术支持</p>
+        <p class="text-[11px] text-gray-300 leading-relaxed">
+          Copyright © 2026 希皓电竞 All Rights Reserved.<br>
+          最终解释权归希皓电竞所有。
+        </p>
+      </div>
+
+    </template>
+
+  </div>
+
+  <script>
+    const { createApp, ref, reactive, computed, onMounted } = Vue;
+
+    const SUPABASE_URL = 'https://cvcerkgcstvnqiqsmkj.supabase.co';
+    const SUPABASE_ANON_KEY = 'sb_publishable_H9iztdbCiT4xu566vfIQ8Q_d66u1_aQ';
+
+    const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+    createApp({
+      setup() {
+        const loading = ref(true);
+        const isAdmin = ref(false);
+        const statsLoaded = ref(false);
+        const phone = ref('');
+
+        const stats = reactive({
+          pendingBoosters: 0,
+          pendingOrders: 0,
+          pendingWithdrawals: 0,
+          todayOrders: 0
+        });
+
+        // 手机号脱敏
+        const maskedPhone = computed(() => {
+          if (!phone.value) return '';
+          return phone.value.replace(/(\d{3})\d{4}(\d{4})/, '$1****$2');
+        });
+
+        // 检查登录
+        const checkAuth = () => {
+          const token = localStorage.getItem('access_token');
+          const userPhone = localStorage.getItem('user_phone');
+          if (!token) {
+            redirectLogin();
+            return false;
+          }
+          phone.value = userPhone || '';
+          return true;
+        };
+
+        const redirectLogin = () => {
+          document.body.style.opacity = '0';
+          document.body.style.transition = 'opacity 0.3s ease';
+          setTimeout(() => {
+            window.location.href = 'client-login.html';
+          }, 200);
+        };
+
+        // 检查管理员权限
+        const checkAdmin = async () => {
+          try {
+            const userId = localStorage.getItem('user_id');
+            const { data, error } = await supabase
+              .from('profiles')
+              .select('role')
+              .eq('id', userId)
+              .single();
+
+            if (error) throw error;
+            isAdmin.value = data?.role === 'admin';
+
+            if (!isAdmin.value) {
+              // 显示无权限提示，2秒后跳转
+              setTimeout(() => {
+                window.location.href = 'client-home.html';
+              }, 2000);
+            }
+          } catch (err) {
+            console.error('检查管理员权限失败:', err);
+            isAdmin.value = false;
+            setTimeout(() => {
+              window.location.href = 'client-home.html';
+            }, 2000);
+          }
+        };
+
+        // 获取数据概览
+        const fetchStats = async () => {
+          try {
+            // 并行查询 4 个统计
+            const [
+              { count: boosterCount, error: e1 },
+              { count: orderCount, error: e2 },
+              { count: withdrawalCount, error: e3 },
+              { count: todayCount, error: e4 }
+            ] = await Promise.all([
+              // 待审核打手
+              supabase
+                .from('boosters')
+                .select('*', { count: 'exact', head: true })
+                .eq('audit_status', 'pending'),
+              // 待接单订单
+              supabase
+                .from('orders')
+                .select('*', { count: 'exact', head: true })
+                .eq('status', 'pending_accept'),
+              // 待审核提现
+              supabase
+                .from('withdrawals')
+                .select('*', { count: 'exact', head: true })
+                .eq('status', 'pending'),
+              // 今日新增订单
+              supabase
+                .from('orders')
+                .select('*', { count: 'exact', head: true })
+                .gte('created_at', getTodayStart())
+            ]);
+
+            if (e1) console.error('打手统计失败:', e1);
+            if (e2) console.error('订单统计失败:', e2);
+            if (e3) console.error('提现统计失败:', e3);
+            if (e4) console.error('今日订单统计失败:', e4);
+
+            stats.pendingBoosters = boosterCount || 0;
+            stats.pendingOrders = orderCount || 0;
+            stats.pendingWithdrawals = withdrawalCount || 0;
+            stats.todayOrders = todayCount || 0;
+            statsLoaded.value = true;
+
+          } catch (err) {
+            console.error('获取统计数据失败:', err);
+            statsLoaded.value = true;
+          }
+        };
+
+        // 获取今天开始时间（ISO 格式）
+        const getTodayStart = () => {
+          const d = new Date();
+          d.setHours(0, 0, 0, 0);
+          return d.toISOString();
+        };
+
+        // 页面跳转
+        const goPage = (url) => {
+          window.location.href = url;
+        };
+
+        // 退出登录
+        const handleLogout = () => {
+          if (!confirm('确定要退出登录吗？')) return;
+          supabase.auth.signOut();
+          localStorage.removeItem('access_token');
+          localStorage.removeItem('user_id');
+          localStorage.removeItem('user_phone');
+          redirectLogin();
+        };
+
+        // 初始化
+        onMounted(async () => {
+          if (!checkAuth()) return;
+          await checkAdmin();
+          loading.value = false;
+          if (isAdmin.value) {
+            fetchStats();
+          }
+        });
+
+        return {
+          loading,
+          isAdmin,
+          statsLoaded,
+          stats,
+          maskedPhone,
+          goPage,
+          handleLogout
+        };
+      }
+    }).mount('#app');
+  </script>
+</body>
+</html>

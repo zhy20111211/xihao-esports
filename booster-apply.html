@@ -1,0 +1,401 @@
+<!-- booster-apply.html - 打手入驻申请 -->
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>打手入驻申请</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    * { -webkit-tap-highlight-color: transparent; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei", sans-serif; }
+
+    /* 入场动画 */
+    .fade-in-up {
+      opacity: 0;
+      transform: translateY(16px);
+      animation: fadeInUp 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    }
+    .fade-in-up.d1 { animation-delay: 0.05s; }
+    .fade-in-up.d2 { animation-delay: 0.1s; }
+    .fade-in-up.d3 { animation-delay: 0.15s; }
+    .fade-in-up.d4 { animation-delay: 0.2s; }
+    .fade-in-up.d5 { animation-delay: 0.25s; }
+    .fade-in-up.d6 { animation-delay: 0.3s; }
+    .fade-in-up.d7 { animation-delay: 0.35s; }
+    .fade-in-up.d8 { animation-delay: 0.4s; }
+
+    @keyframes fadeInUp {
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    /* 输入框焦点过渡 */
+    .input-field {
+      transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    .input-field:focus {
+      border-color: #1a1a1a;
+      box-shadow: 0 0 0 4px rgba(0, 0, 0, 0.05);
+    }
+
+    /* 按钮缩放 */
+    .btn-press {
+      transition: all 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    .btn-press:active {
+      transform: scale(0.95);
+      opacity: 0.85;
+    }
+
+    /* 性别单选 */
+    .gender-option {
+      transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    .gender-option.active {
+      border-color: #1a1a1a;
+      background-color: #f9fafb;
+    }
+
+    /* 加载旋转 */
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+    .spinner {
+      animation: spin 0.8s linear infinite;
+    }
+
+    /* 底部安全区 */
+    .pb-safe {
+      padding-bottom: calc(24px + env(safe-area-inset-bottom));
+    }
+
+    /* 错误抖动 */
+    @keyframes shake {
+      0%, 100% { transform: translateX(0); }
+      25% { transform: translateX(-4px); }
+      75% { transform: translateX(4px); }
+    }
+    .shake {
+      animation: shake 0.3s ease;
+    }
+  </style>
+</head>
+<body class="bg-white min-h-screen pb-safe">
+  <div id="app">
+
+    <!-- 顶部导航 -->
+    <div class="flex items-center px-4 pt-12 pb-4 fade-in-up">
+      <button
+        @click="goBack"
+        class="w-10 h-10 flex items-center justify-center rounded-full hover:bg-gray-100 btn-press"
+      >
+        <svg class="w-5 h-5 text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path>
+        </svg>
+      </button>
+      <h1 class="flex-1 text-center text-lg font-semibold text-gray-900 pr-10">打手入驻申请</h1>
+    </div>
+
+    <!-- 表单内容 -->
+    <div class="px-6 pt-2 pb-8 max-w-md mx-auto">
+
+      <p class="text-gray-500 text-sm mb-6 fade-in-up d1">
+        请如实填写以下信息，我们会尽快审核
+      </p>
+
+      <!-- 真实姓名 -->
+      <div class="mb-5 fade-in-up d2">
+        <label class="block text-sm font-medium text-gray-700 mb-2">
+          真实姓名 <span class="text-red-500">*</span>
+        </label>
+        <input
+          v-model="form.real_name"
+          type="text"
+          placeholder="请输入真实姓名"
+          class="input-field w-full px-4 py-3.5 bg-gray-50 border border-gray-200 rounded-xl text-gray-900 placeholder-gray-400 outline-none text-base"
+          :class="{ 'border-red-300 bg-red-50/50 shake': errors.real_name }"
+          @input="errors.real_name = ''"
+        />
+        <p v-if="errors.real_name" class="text-red-500 text-xs mt-1.5">{{ errors.real_name }}</p>
+      </div>
+
+      <!-- 身份证号 -->
+      <div class="mb-5 fade-in-up d3">
+        <label class="block text-sm font-medium text-gray-700 mb-2">
+          身份证号 <span class="text-red-500">*</span>
+        </label>
+        <input
+          v-model="form.id_card"
+          type="text"
+          maxlength="18"
+          placeholder="请输入 18 位身份证号"
+          class="input-field w-full px-4 py-3.5 bg-gray-50 border border-gray-200 rounded-xl text-gray-900 placeholder-gray-400 outline-none text-base font-mono"
+          :class="{ 'border-red-300 bg-red-50/50 shake': errors.id_card }"
+          @input="errors.id_card = ''; form.id_card = form.id_card.toUpperCase()"
+        />
+        <p v-if="errors.id_card" class="text-red-500 text-xs mt-1.5">{{ errors.id_card }}</p>
+      </div>
+
+      <!-- 游戏ID（昵称） -->
+      <div class="mb-5 fade-in-up d4">
+        <label class="block text-sm font-medium text-gray-700 mb-2">
+          游戏ID（昵称） <span class="text-red-500">*</span>
+        </label>
+        <input
+          v-model="form.game_id"
+          type="text"
+          placeholder="请输入游戏内昵称"
+          class="input-field w-full px-4 py-3.5 bg-gray-50 border border-gray-200 rounded-xl text-gray-900 placeholder-gray-400 outline-none text-base"
+          :class="{ 'border-red-300 bg-red-50/50 shake': errors.game_id }"
+          @input="errors.game_id = ''"
+        />
+        <p v-if="errors.game_id" class="text-red-500 text-xs mt-1.5">{{ errors.game_id }}</p>
+      </div>
+
+      <!-- 游戏数字ID -->
+      <div class="mb-5 fade-in-up d5">
+        <label class="block text-sm font-medium text-gray-700 mb-2">
+          游戏数字ID <span class="text-red-500">*</span>
+        </label>
+        <input
+          v-model="form.game_rank"
+          type="text"
+          placeholder="请输入纯数字 ID"
+          class="input-field w-full px-4 py-3.5 bg-gray-50 border border-gray-200 rounded-xl text-gray-900 placeholder-gray-400 outline-none text-base font-mono"
+          :class="{ 'border-red-300 bg-red-50/50 shake': errors.game_rank }"
+          @input="errors.game_rank = ''; form.game_rank = form.game_rank.replace(/\D/g, '')"
+        />
+        <p v-if="errors.game_rank" class="text-red-500 text-xs mt-1.5">{{ errors.game_rank }}</p>
+      </div>
+
+      <!-- 性别 -->
+      <div class="mb-5 fade-in-up d6">
+        <label class="block text-sm font-medium text-gray-700 mb-2">
+          性别 <span class="text-red-500">*</span>
+        </label>
+        <div class="flex gap-3">
+          <div
+            v-for="g in genderOptions"
+            :key="g"
+            @click="form.maps = g; errors.maps = ''"
+            class="gender-option flex-1 py-3 border border-gray-200 rounded-xl text-center cursor-pointer text-sm"
+            :class="[
+              form.maps === g ? 'active font-medium text-gray-900' : 'text-gray-500',
+              errors.maps ? 'border-red-300' : ''
+            ]"
+          >
+            {{ g }}
+          </div>
+        </div>
+        <p v-if="errors.maps" class="text-red-500 text-xs mt-1.5">{{ errors.maps }}</p>
+      </div>
+
+      <!-- 其他补充 -->
+      <div class="mb-8 fade-in-up d7">
+        <label class="block text-sm font-medium text-gray-700 mb-2">
+          其他补充 <span class="text-gray-400 text-xs font-normal">（选填）</span>
+        </label>
+        <textarea
+          v-model="form.experience"
+          rows="4"
+          placeholder="例如：擅长地图、可服务时间段、历史战绩等"
+          class="input-field w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-gray-900 placeholder-gray-400 outline-none text-sm resize-none"
+        ></textarea>
+      </div>
+
+      <!-- 通用错误提示 -->
+      <div v-if="generalError" class="mb-4 bg-red-50 border border-red-100 rounded-xl px-4 py-3 fade-in-up">
+        <p class="text-red-600 text-sm">{{ generalError }}</p>
+      </div>
+
+      <!-- 提交按钮 -->
+      <button
+        @click="handleSubmit"
+        :disabled="submitting"
+        class="btn-press w-full py-4 bg-gray-900 text-white rounded-xl font-medium text-base disabled:opacity-50 disabled:cursor-not-allowed fade-in-up d8"
+      >
+        <span v-if="submitting" class="inline-flex items-center gap-2">
+          <svg class="spinner w-5 h-5" viewBox="0 0 24 24" fill="none">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+          </svg>
+          提交中...
+        </span>
+        <span v-else>提交申请</span>
+      </button>
+
+    </div>
+
+    <!-- 版权页脚 -->
+    <div class="text-center px-6 pt-2 pb-safe fade-in-up d8">
+      <p class="text-sm text-gray-700 font-medium mb-1">希皓电竞</p>
+      <p class="text-xs text-gray-400 mb-1">希皓网游 提供技术支持</p>
+      <p class="text-[11px] text-gray-300 leading-relaxed">
+        Copyright © 2026 希皓电竞 All Rights Reserved.<br>
+        最终解释权归希皓电竞所有。
+      </p>
+    </div>
+
+  </div>
+
+  <script>
+    const { createApp, ref, reactive, onMounted } = Vue;
+
+    const SUPABASE_URL = 'https://cvcerkgcstvnqiqsmkj.supabase.co';
+    const SUPABASE_ANON_KEY = 'sb_publishable_H9iztdbCiT4xu566vfIQ8Q_d66u1_aQ';
+
+    const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+    createApp({
+      setup() {
+        const genderOptions = ['男', '女', '保密'];
+
+        const form = reactive({
+          real_name: '',
+          id_card: '',
+          game_id: '',
+          game_rank: '',
+          maps: '',       // 存性别
+          experience: ''  // 存其他补充
+        });
+
+        const errors = reactive({
+          real_name: '',
+          id_card: '',
+          game_id: '',
+          game_rank: '',
+          maps: ''
+        });
+
+        const submitting = ref(false);
+        const generalError = ref('');
+
+        // 检查登录
+        const checkAuth = () => {
+          const token = localStorage.getItem('access_token');
+          if (!token) {
+            document.body.style.opacity = '0';
+            document.body.style.transition = 'opacity 0.3s ease';
+            setTimeout(() => {
+              window.location.href = 'client-login.html';
+            }, 200);
+            return false;
+          }
+          return true;
+        };
+
+        // 表单校验
+        const validate = () => {
+          let valid = true;
+
+          // 真实姓名
+          if (!form.real_name.trim()) {
+            errors.real_name = '请输入真实姓名';
+            valid = false;
+          } else if (form.real_name.trim().length < 2) {
+            errors.real_name = '姓名至少 2 个字';
+            valid = false;
+          }
+
+          // 身份证号
+          if (!form.id_card.trim()) {
+            errors.id_card = '请输入身份证号';
+            valid = false;
+          } else if (!/^[1-9]\d{5}(18|19|20)\d{2}(0[1-9]|1[0-2])(0[1-9]|[12]\d|3[01])\d{3}[\dXx]$/.test(form.id_card.trim())) {
+            errors.id_card = '请输入正确的 18 位身份证号';
+            valid = false;
+          }
+
+          // 游戏ID（昵称）
+          if (!form.game_id.trim()) {
+            errors.game_id = '请输入游戏昵称';
+            valid = false;
+          }
+
+          // 游戏数字ID
+          if (!form.game_rank.trim()) {
+            errors.game_rank = '请输入游戏数字 ID';
+            valid = false;
+          } else if (!/^\d+$/.test(form.game_rank.trim())) {
+            errors.game_rank = '游戏数字 ID 只能是数字';
+            valid = false;
+          }
+
+          // 性别
+          if (!form.maps) {
+            errors.maps = '请选择性别';
+            valid = false;
+          }
+
+          return valid;
+        };
+
+        // 提交申请
+        const handleSubmit = async () => {
+          generalError.value = '';
+
+          if (!validate()) return;
+
+          submitting.value = true;
+
+          try {
+            const userId = localStorage.getItem('user_id');
+
+            // 严格按字段映射插入 boosters 表
+            const { error } = await supabase
+              .from('boosters')
+              .insert({
+                user_id: userId,
+                real_name: form.real_name.trim(),
+                id_card: form.id_card.trim(),
+                game_id: form.game_id.trim(),
+                game_rank: form.game_rank.trim(),
+                maps: form.maps,               // 存性别
+                experience: form.experience.trim() || '',  // 存其他补充
+                certificate: '',               // 固定空字符串
+                audit_status: 'pending'        // 默认待审核
+              });
+
+            if (error) throw error;
+
+            // 提交成功，跳回工作台
+            alert('申请提交成功，等待审核');
+            window.location.href = 'booster-home.html';
+
+          } catch (err) {
+            console.error('提交失败:', err);
+            let msg = err.message || '提交失败，请重试';
+            if (msg.includes('duplicate') || msg.includes('already')) {
+              msg = '您已提交过申请，请耐心等待审核';
+            }
+            generalError.value = msg;
+          } finally {
+            submitting.value = false;
+          }
+        };
+
+        // 返回
+        const goBack = () => {
+          window.location.href = 'booster-home.html';
+        };
+
+        onMounted(() => {
+          checkAuth();
+        });
+
+        return {
+          form,
+          errors,
+          genderOptions,
+          submitting,
+          generalError,
+          handleSubmit,
+          goBack
+        };
+      }
+    }).mount('#app');
+  </script>
+</body>
+</html>

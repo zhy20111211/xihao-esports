@@ -1,0 +1,779 @@
+<!-- admin-packages.html - 套餐管理 -->
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>套餐管理</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    * { -webkit-tap-highlight-color: transparent; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei", sans-serif; }
+
+    /* 入场动画 */
+    .fade-in-up {
+      opacity: 0;
+      transform: translateY(12px);
+      animation: fadeInUp 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    }
+    .fade-in-up.d1 { animation-delay: 0.03s; }
+    .fade-in-up.d2 { animation-delay: 0.08s; }
+    .fade-in-up.d3 { animation-delay: 0.13s; }
+    .fade-in-up.d4 { animation-delay: 0.18s; }
+    .fade-in-up.d5 { animation-delay: 0.23s; }
+    .fade-in-up.d6 { animation-delay: 0.28s; }
+    .fade-in-up.d7 { animation-delay: 0.33s; }
+    .fade-in-up.d8 { animation-delay: 0.38s; }
+
+    @keyframes fadeInUp {
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    /* 按钮缩放 */
+    .btn-press {
+      transition: all 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    .btn-press:active {
+      transform: scale(0.95);
+      opacity: 0.85;
+    }
+
+    /* 输入框焦点 */
+    .input-field {
+      transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    .input-field:focus {
+      border-color: #1a1a1a;
+      box-shadow: 0 0 0 4px rgba(0, 0, 0, 0.05);
+    }
+
+    /* 开关样式 */
+    .switch {
+      position: relative;
+      width: 44px;
+      height: 26px;
+      border-radius: 13px;
+      background: #e5e7eb;
+      cursor: pointer;
+      transition: background 0.3s ease;
+      flex-shrink: 0;
+    }
+    .switch.on {
+      background: #10b981;
+    }
+    .switch::after {
+      content: '';
+      position: absolute;
+      top: 2px;
+      left: 2px;
+      width: 22px;
+      height: 22px;
+      background: white;
+      border-radius: 50%;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.15);
+      transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    .switch.on::after {
+      transform: translateX(18px);
+    }
+
+    /* 骨架屏 */
+    @keyframes shimmer {
+      0% { background-position: -200% 0; }
+      100% { background-position: 200% 0; }
+    }
+    .skeleton {
+      background: linear-gradient(90deg, #f3f4f6 25%, #e5e7eb 50%, #f3f4f6 75%);
+      background-size: 200% 100%;
+      animation: shimmer 1.5s infinite;
+      border-radius: 8px;
+    }
+
+    /* 底部安全区 */
+    .pb-safe {
+      padding-bottom: calc(20px + env(safe-area-inset-bottom));
+    }
+
+    /* 表单展开动画 */
+    .form-expand-enter-active,
+    .form-expand-leave-active {
+      transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+      overflow: hidden;
+    }
+    .form-expand-enter-from,
+    .form-expand-leave-to {
+      opacity: 0;
+      max-height: 0;
+      margin-bottom: 0;
+    }
+    .form-expand-enter-to,
+    .form-expand-leave-from {
+      opacity: 1;
+      max-height: 900px;
+    }
+
+    /* 加载旋转 */
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+    .spinner {
+      animation: spin 0.8s linear infinite;
+    }
+
+    /* 成功提示 */
+    .toast-enter-active,
+    .toast-leave-active {
+      transition: all 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    .toast-enter-from,
+    .toast-leave-to {
+      opacity: 0;
+      transform: translateX(-50%) translateY(-16px);
+    }
+    .toast-enter-to,
+    .toast-leave-from {
+      opacity: 1;
+      transform: translateX(-50%) translateY(0);
+    }
+  </style>
+</head>
+<body class="bg-gray-50/50 min-h-screen pb-safe">
+  <div id="app">
+
+    <!-- 顶部导航栏 -->
+    <div class="bg-white sticky top-0 z-10 border-b border-gray-100 fade-in-up">
+      <div class="flex items-center px-4 h-14">
+        <button
+          @click="goBack"
+          class="w-10 h-10 flex items-center justify-center rounded-full hover:bg-gray-100 btn-press -ml-2"
+        >
+          <svg class="w-5 h-5 text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path>
+          </svg>
+        </button>
+        <h1 class="flex-1 text-center text-base font-semibold text-gray-900 pr-10">套餐管理</h1>
+      </div>
+    </div>
+
+    <!-- 无权限提示 -->
+    <div v-if="authChecked && !isAdmin" class="pt-24 text-center px-6">
+      <div class="text-4xl mb-4">🔒</div>
+      <h3 class="text-lg font-medium text-gray-900 mb-2">您无权访问</h3>
+      <p class="text-gray-500 text-sm">正在返回...</p>
+    </div>
+
+    <!-- 主体内容 -->
+    <template v-else-if="isAdmin">
+
+      <!-- 添加/编辑套餐按钮 -->
+      <div class="px-4 py-4">
+        <button
+          v-if="!showAddForm"
+          @click="openAddForm"
+          class="btn-press w-full py-3.5 bg-gray-900 text-white rounded-xl font-medium text-sm fade-in-up d1 flex items-center justify-center gap-2"
+        >
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
+          </svg>
+          添加套餐
+        </button>
+      </div>
+
+      <!-- 添加/编辑套餐表单 -->
+      <transition name="form-expand">
+        <div v-if="showAddForm" class="px-4 mb-4">
+          <div class="bg-white rounded-2xl p-5 border border-gray-100 fade-in-up d2">
+            <div class="flex items-center justify-between mb-4">
+              <h3 class="text-base font-semibold text-gray-900">
+                {{ isEdit ? '编辑套餐' : '新增套餐' }}
+              </h3>
+              <button
+                v-if="isEdit"
+                @click="cancelEdit"
+                class="text-xs text-gray-400 hover:text-gray-600 btn-press"
+              >
+                取消编辑
+              </button>
+            </div>
+
+            <!-- 套餐名称 -->
+            <div class="mb-4">
+              <label class="block text-xs font-medium text-gray-500 mb-1.5">套餐名称 <span class="text-red-500">*</span></label>
+              <input
+                v-model="form.name"
+                type="text"
+                placeholder="如：钻石护航"
+                class="input-field w-full px-3.5 py-3 bg-gray-50 border border-gray-200 rounded-xl text-sm text-gray-900 placeholder-gray-400 outline-none"
+                :class="{ 'border-red-300': formErrors.name }"
+                @input="formErrors.name = ''"
+              />
+              <p v-if="formErrors.name" class="text-red-500 text-xs mt-1">{{ formErrors.name }}</p>
+            </div>
+
+            <!-- 描述 -->
+            <div class="mb-4">
+              <label class="block text-xs font-medium text-gray-500 mb-1.5">描述</label>
+              <input
+                v-model="form.description"
+                type="text"
+                placeholder="套餐描述"
+                class="input-field w-full px-3.5 py-3 bg-gray-50 border border-gray-200 rounded-xl text-sm text-gray-900 placeholder-gray-400 outline-none"
+              />
+            </div>
+
+            <!-- 两列：地图 + 局数 -->
+            <div class="flex gap-3 mb-4">
+              <div class="flex-1">
+                <label class="block text-xs font-medium text-gray-500 mb-1.5">地图</label>
+                <input
+                  v-model="form.map_name"
+                  type="text"
+                  placeholder="如：地铁逃生"
+                  class="input-field w-full px-3.5 py-3 bg-gray-50 border border-gray-200 rounded-xl text-sm text-gray-900 placeholder-gray-400 outline-none"
+                />
+              </div>
+              <div class="flex-1">
+                <label class="block text-xs font-medium text-gray-500 mb-1.5">局数</label>
+                <input
+                  v-model="form.rounds"
+                  type="number"
+                  placeholder="局数"
+                  class="input-field w-full px-3.5 py-3 bg-gray-50 border border-gray-200 rounded-xl text-sm text-gray-900 placeholder-gray-400 outline-none"
+                  @input="form.rounds = form.rounds.replace(/[^\d]/g, '')"
+                />
+              </div>
+            </div>
+
+            <!-- 保底说明 -->
+            <div class="mb-4">
+              <label class="block text-xs font-medium text-gray-500 mb-1.5">保底说明</label>
+              <input
+                v-model="form.guarantee"
+                type="text"
+                placeholder="如：保底红星+700万"
+                class="input-field w-full px-3.5 py-3 bg-gray-50 border border-gray-200 rounded-xl text-sm text-gray-900 placeholder-gray-400 outline-none"
+              />
+            </div>
+
+            <!-- 两列：价格 + 打手分成 -->
+            <div class="flex gap-3 mb-4">
+              <div class="flex-1">
+                <label class="block text-xs font-medium text-gray-500 mb-1.5">价格（元） <span class="text-red-500">*</span></label>
+                <input
+                  v-model="form.price"
+                  type="number"
+                  placeholder="0.00"
+                  class="input-field w-full px-3.5 py-3 bg-gray-50 border border-gray-200 rounded-xl text-sm text-gray-900 placeholder-gray-400 outline-none"
+                  :class="{ 'border-red-300': formErrors.price }"
+                  @input="formErrors.price = ''"
+                />
+              </div>
+              <div class="flex-1">
+                <label class="block text-xs font-medium text-gray-500 mb-1.5">打手分成（%） <span class="text-red-500">*</span></label>
+                <input
+                  v-model="form.share_percent"
+                  type="number"
+                  placeholder="如：70"
+                  class="input-field w-full px-3.5 py-3 bg-gray-50 border border-gray-200 rounded-xl text-sm text-gray-900 placeholder-gray-400 outline-none"
+                  :class="{ 'border-red-300': formErrors.share_percent }"
+                  @input="formErrors.share_percent = ''"
+                />
+              </div>
+            </div>
+
+            <!-- 允许指定打手 -->
+            <div class="flex items-center justify-between mb-4 py-2">
+              <span class="text-sm text-gray-700">允许指定打手</span>
+              <div
+                class="switch"
+                :class="{ on: form.allow_assign }"
+                @click="form.allow_assign = !form.allow_assign"
+              ></div>
+            </div>
+
+            <!-- 指定打手加价 -->
+            <div v-if="form.allow_assign" class="mb-4">
+              <label class="block text-xs font-medium text-gray-500 mb-1.5">指定打手加价（元）</label>
+              <input
+                v-model="form.assign_extra_price"
+                type="number"
+                placeholder="0.00"
+                class="input-field w-full px-3.5 py-3 bg-gray-50 border border-gray-200 rounded-xl text-sm text-gray-900 placeholder-gray-400 outline-none"
+              />
+            </div>
+
+            <!-- 排序 -->
+            <div class="mb-5">
+              <label class="block text-xs font-medium text-gray-500 mb-1.5">排序（数字越小越靠前）</label>
+              <input
+                v-model="form.sort_order"
+                type="number"
+                placeholder="默认 0"
+                class="input-field w-full px-3.5 py-3 bg-gray-50 border border-gray-200 rounded-xl text-sm text-gray-900 placeholder-gray-400 outline-none"
+              />
+            </div>
+
+            <!-- 操作按钮 -->
+            <div class="flex gap-3">
+              <button
+                v-if="isEdit"
+                @click="cancelEdit"
+                class="btn-press flex-1 py-3 bg-gray-100 text-gray-700 rounded-xl font-medium text-sm"
+              >
+                取消
+              </button>
+              <button
+                @click="handleSave"
+                :disabled="saving"
+                class="btn-press flex-1 py-3 bg-gray-900 text-white rounded-xl font-medium text-sm disabled:opacity-50"
+              >
+                <span v-if="saving" class="inline-flex items-center gap-2">
+                  <svg class="spinner w-4 h-4" viewBox="0 0 24 24" fill="none">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                  </svg>
+                  保存中...
+                </span>
+                <span v-else>{{ isEdit ? '更新套餐' : '保存套餐' }}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </transition>
+
+      <!-- 套餐列表 -->
+      <div class="px-4 pb-4">
+        <div class="flex items-center justify-between mb-3 fade-in-up d3">
+          <h2 class="text-sm font-medium text-gray-900">全部套餐</h2>
+          <span class="text-xs text-gray-400">共 {{ packages.length }} 个</span>
+        </div>
+
+        <!-- 加载骨架 -->
+        <div v-if="loading" class="space-y-3">
+          <div v-for="i in 3" :key="i" class="bg-white rounded-2xl p-4 border border-gray-100 fade-in-up" :class="'d' + (i + 2)">
+            <div class="flex justify-between mb-2">
+              <div class="skeleton h-5 w-28"></div>
+              <div class="skeleton h-5 w-12"></div>
+            </div>
+            <div class="skeleton h-4 w-40 mb-2"></div>
+            <div class="skeleton h-4 w-32"></div>
+          </div>
+        </div>
+
+        <!-- 空状态 -->
+        <div v-else-if="packages.length === 0" class="text-center py-12 fade-in-up d3">
+          <div class="text-4xl mb-3">📦</div>
+          <p class="text-gray-500 text-sm">暂无套餐，点击上方添加</p>
+        </div>
+
+        <!-- 套餐卡片列表 -->
+        <div v-else class="space-y-3">
+          <div
+            v-for="(pkg, idx) in packages"
+            :key="pkg.id"
+            class="bg-white rounded-2xl p-4 border border-gray-100 fade-in-up"
+            :class="'d' + Math.min((idx % 5) + 3, 7)"
+          >
+            <!-- 顶部：名称 + 状态开关 -->
+            <div class="flex items-start justify-between mb-2">
+              <div>
+                <h3 class="text-base font-semibold text-gray-900">{{ pkg.name }}</h3>
+                <p v-if="pkg.description" class="text-xs text-gray-400 mt-0.5">{{ pkg.description }}</p>
+              </div>
+              <div
+                class="switch"
+                :class="{ on: pkg.status === 'on' }"
+                @click="toggleStatus(pkg)"
+              ></div>
+            </div>
+
+            <!-- 标签 -->
+            <div class="flex flex-wrap gap-1.5 mb-3">
+              <span v-if="pkg.map_name" class="inline-flex items-center px-2 py-0.5 bg-gray-50 text-gray-600 text-xs rounded-full">
+                🗺️ {{ pkg.map_name }}
+              </span>
+              <span v-if="pkg.rounds" class="inline-flex items-center px-2 py-0.5 bg-gray-50 text-gray-600 text-xs rounded-full">
+                🎯 {{ pkg.rounds }} 局
+              </span>
+              <span v-if="pkg.allow_assign" class="inline-flex items-center px-2 py-0.5 bg-gray-50 text-gray-600 text-xs rounded-full">
+                👤 可指定
+              </span>
+            </div>
+
+            <!-- 保底 -->
+            <p v-if="pkg.guarantee" class="text-xs text-gray-500 mb-3 line-clamp-1">
+              {{ pkg.guarantee }}
+            </p>
+
+            <!-- 底部：价格 + 分成 + 状态 + 编辑 -->
+            <div class="flex items-end justify-between pt-3 border-t border-gray-50">
+              <div class="flex items-baseline gap-3">
+                <div>
+                  <p class="text-xs text-gray-400">价格</p>
+                  <p class="text-lg font-bold text-gray-900">¥{{ pkg.price.toFixed(0) }}</p>
+                </div>
+                <div>
+                  <p class="text-xs text-gray-400">打手分成</p>
+                  <p class="text-sm font-medium text-green-600">{{ (pkg.booster_share_rate * 100).toFixed(0) }}%</p>
+                </div>
+              </div>
+              <div class="flex items-center gap-2">
+                <span
+                  class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium"
+                  :class="pkg.status === 'on' ? 'bg-green-50 text-green-700' : 'bg-gray-100 text-gray-500'"
+                >
+                  {{ pkg.status === 'on' ? '上架中' : '已下架' }}
+                </span>
+                <button
+                  @click="editPackage(pkg)"
+                  class="btn-press px-2.5 py-1 bg-gray-100 hover:bg-gray-200 text-gray-600 text-xs rounded-lg flex items-center gap-1"
+                >
+                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"></path>
+                  </svg>
+                  编辑
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 版权页脚 -->
+      <div class="text-center px-6 pt-4 fade-in-up d8">
+        <p class="text-sm text-gray-700 font-medium mb-1">希皓电竞</p>
+        <p class="text-xs text-gray-400 mb-1">希皓网游 提供技术支持</p>
+        <p class="text-[11px] text-gray-300 leading-relaxed">
+          Copyright © 2026 希皓电竞 All Rights Reserved.<br>
+          最终解释权归希皓电竞所有。
+        </p>
+      </div>
+
+    </template>
+
+    <!-- 成功提示 -->
+    <transition name="toast">
+      <div
+        v-if="toast.show"
+        class="fixed top-20 left-1/2 z-50 px-5 py-3 bg-gray-900 text-white rounded-full text-sm font-medium shadow-lg flex items-center gap-2"
+        style="transform: translateX(-50%)"
+      >
+        <svg class="w-4 h-4 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"></path>
+        </svg>
+        {{ toast.message }}
+      </div>
+    </transition>
+
+  </div>
+
+  <script>
+    const { createApp, ref, reactive, onMounted } = Vue;
+
+    const SUPABASE_URL = 'https://cvcerkgcstvnqiqsmkj.supabase.co';
+    const SUPABASE_ANON_KEY = 'sb_publishable_H9iztdbCiT4xu566vfIQ8Q_d66u1_aQ';
+
+    const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+    createApp({
+      setup() {
+        const packages = ref([]);
+        const loading = ref(true);
+        const isAdmin = ref(false);
+        const authChecked = ref(false);
+        const showAddForm = ref(false);
+        const saving = ref(false);
+
+        // 编辑模式
+        const isEdit = ref(false);
+        const editingId = ref(null);
+
+        // toast
+        const toast = reactive({
+          show: false,
+          message: ''
+        });
+
+        const form = reactive({
+          name: '',
+          description: '',
+          map_name: '',
+          rounds: '',
+          guarantee: '',
+          price: '',
+          share_percent: '70',
+          allow_assign: false,
+          assign_extra_price: '',
+          sort_order: ''
+        });
+
+        const formErrors = reactive({
+          name: '',
+          price: '',
+          share_percent: ''
+        });
+
+        // 显示成功提示
+        const showToast = (msg) => {
+          toast.message = msg;
+          toast.show = true;
+          setTimeout(() => {
+            toast.show = false;
+          }, 1800);
+        };
+
+        // 检查登录
+        const checkAuth = () => {
+          const token = localStorage.getItem('access_token');
+          if (!token) {
+            window.location.href = 'client-login.html';
+            return false;
+          }
+          return true;
+        };
+
+        // 检查管理员权限
+        const checkAdmin = async () => {
+          try {
+            const userId = localStorage.getItem('user_id');
+            const { data, error } = await supabase
+              .from('profiles')
+              .select('role')
+              .eq('id', userId)
+              .single();
+
+            if (error) throw error;
+            isAdmin.value = data?.role === 'admin';
+
+            if (!isAdmin.value) {
+              setTimeout(() => {
+                window.location.href = 'client-home.html';
+              }, 2000);
+            }
+          } catch (err) {
+            console.error('权限检查失败:', err);
+            isAdmin.value = false;
+            setTimeout(() => {
+              window.location.href = 'client-home.html';
+            }, 2000);
+          } finally {
+            authChecked.value = true;
+          }
+        };
+
+        // 获取套餐列表
+        const fetchPackages = async () => {
+          loading.value = true;
+          try {
+            const { data, error } = await supabase
+              .from('packages')
+              .select('*')
+              .order('sort_order', { ascending: true })
+              .order('price', { ascending: false });
+
+            if (error) throw error;
+            packages.value = data || [];
+          } catch (err) {
+            console.error('获取套餐失败:', err);
+            packages.value = [];
+          } finally {
+            loading.value = false;
+          }
+        };
+
+        // 校验表单
+        const validateForm = () => {
+          let valid = true;
+
+          if (!form.name.trim()) {
+            formErrors.name = '请输入套餐名称';
+            valid = false;
+          }
+
+          if (!form.price || parseFloat(form.price) <= 0) {
+            formErrors.price = '请输入有效价格';
+            valid = false;
+          }
+
+          if (!form.share_percent || parseFloat(form.share_percent) <= 0 || parseFloat(form.share_percent) > 100) {
+            formErrors.share_percent = '请输入 1-100 的分成比例';
+            valid = false;
+          }
+
+          return valid;
+        };
+
+        // 重置表单
+        const resetForm = () => {
+          form.name = '';
+          form.description = '';
+          form.map_name = '';
+          form.rounds = '';
+          form.guarantee = '';
+          form.price = '';
+          form.share_percent = '70';
+          form.allow_assign = false;
+          form.assign_extra_price = '';
+          form.sort_order = '';
+          formErrors.name = '';
+          formErrors.price = '';
+          formErrors.share_percent = '';
+          isEdit.value = false;
+          editingId.value = null;
+        };
+
+        // 打开新增表单
+        const openAddForm = () => {
+          resetForm();
+          showAddForm.value = true;
+        };
+
+        // 编辑套餐：回填数据
+        const editPackage = (pkg) => {
+          isEdit.value = true;
+          editingId.value = pkg.id;
+
+          form.name = pkg.name || '';
+          form.description = pkg.description || '';
+          form.map_name = pkg.map_name || '';
+          form.rounds = pkg.rounds || '';
+          form.guarantee = pkg.guarantee || '';
+          form.price = pkg.price || '';
+          form.share_percent = pkg.booster_share_rate ? (pkg.booster_share_rate * 100).toFixed(0) : '70';
+          form.allow_assign = pkg.allow_assign || false;
+          form.assign_extra_price = pkg.assign_extra_price || '';
+          form.sort_order = pkg.sort_order ?? '';
+
+          showAddForm.value = true;
+
+          // 滚动到表单顶部
+          setTimeout(() => {
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+          }, 100);
+        };
+
+        // 取消编辑
+        const cancelEdit = () => {
+          resetForm();
+          showAddForm.value = false;
+        };
+
+        // 保存套餐（新增 / 更新）
+        const handleSave = async () => {
+          if (!validateForm()) return;
+
+          saving.value = true;
+          try {
+            const shareRate = parseFloat(form.share_percent) / 100;
+
+            const updateData = {
+              name: form.name.trim(),
+              description: form.description.trim() || null,
+              map_name: form.map_name.trim() || null,
+              rounds: form.rounds ? parseInt(form.rounds) : null,
+              guarantee: form.guarantee.trim() || null,
+              price: parseFloat(form.price),
+              booster_share_rate: shareRate,
+              allow_assign: form.allow_assign,
+              assign_extra_price: form.assign_extra_price ? parseFloat(form.assign_extra_price) : null,
+              sort_order: form.sort_order ? parseInt(form.sort_order) : 0
+            };
+
+            if (isEdit.value) {
+              // 更新模式：不修改 status
+              const { error } = await supabase
+                .from('packages')
+                .update(updateData)
+                .eq('id', editingId.value);
+
+              if (error) throw error;
+
+              resetForm();
+              showAddForm.value = false;
+              fetchPackages();
+              showToast('更新成功');
+            } else {
+              // 新增模式：status 默认 on
+              const insertData = {
+                ...updateData,
+                status: 'on'
+              };
+
+              const { error } = await supabase
+                .from('packages')
+                .insert(insertData);
+
+              if (error) throw error;
+
+              resetForm();
+              showAddForm.value = false;
+              fetchPackages();
+              showToast('添加成功');
+            }
+          } catch (err) {
+            console.error('保存失败:', err);
+            alert(err.message || '保存失败，请重试');
+          } finally {
+            saving.value = false;
+          }
+        };
+
+        // 切换上架/下架状态
+        const toggleStatus = async (pkg) => {
+          const newStatus = pkg.status === 'on' ? 'off' : 'on';
+          const action = newStatus === 'on' ? '上架' : '下架';
+
+          if (!confirm(`确定${action}「${pkg.name}」吗？`)) return;
+
+          try {
+            const { error } = await supabase
+              .from('packages')
+              .update({ status: newStatus })
+              .eq('id', pkg.id);
+
+            if (error) throw error;
+            pkg.status = newStatus;
+          } catch (err) {
+            console.error('状态切换失败:', err);
+            alert(err.message || '操作失败，请重试');
+          }
+        };
+
+        // 返回
+        const goBack = () => {
+          window.location.href = 'admin-home.html';
+        };
+
+        onMounted(async () => {
+          if (!checkAuth()) return;
+          await checkAdmin();
+          if (isAdmin.value) {
+            fetchPackages();
+          }
+        });
+
+        return {
+          packages,
+          loading,
+          isAdmin,
+          authChecked,
+          showAddForm,
+          saving,
+          isEdit,
+          form,
+          formErrors,
+          toast,
+          openAddForm,
+          editPackage,
+          cancelEdit,
+          handleSave,
+          toggleStatus,
+          goBack
+        };
+      }
+    }).mount('#app');
+  </script>
+</body>
+</html>

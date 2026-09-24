@@ -1,0 +1,603 @@
+<!-- admin-cards.html - 卡密管理 -->
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>卡密管理</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    * { -webkit-tap-highlight-color: transparent; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei", sans-serif; }
+
+    /* 入场动画 */
+    .fade-in-up {
+      opacity: 0;
+      transform: translateY(12px);
+      animation: fadeInUp 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    }
+    .fade-in-up.d1 { animation-delay: 0.03s; }
+    .fade-in-up.d2 { animation-delay: 0.08s; }
+    .fade-in-up.d3 { animation-delay: 0.13s; }
+    .fade-in-up.d4 { animation-delay: 0.18s; }
+    .fade-in-up.d5 { animation-delay: 0.23s; }
+    .fade-in-up.d6 { animation-delay: 0.28s; }
+    .fade-in-up.d7 { animation-delay: 0.33s; }
+    .fade-in-up.d8 { animation-delay: 0.38s; }
+
+    @keyframes fadeInUp {
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    /* 按钮缩放 */
+    .btn-press {
+      transition: all 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    .btn-press:active {
+      transform: scale(0.95);
+      opacity: 0.85;
+    }
+
+    /* 输入框焦点 */
+    .input-field {
+      transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    .input-field:focus {
+      border-color: #1a1a1a;
+      box-shadow: 0 0 0 4px rgba(0, 0, 0, 0.05);
+    }
+
+    /* 骨架屏 */
+    @keyframes shimmer {
+      0% { background-position: -200% 0; }
+      100% { background-position: 200% 0; }
+    }
+    .skeleton {
+      background: linear-gradient(90deg, #f3f4f6 25%, #e5e7eb 50%, #f3f4f6 75%);
+      background-size: 200% 100%;
+      animation: shimmer 1.5s infinite;
+      border-radius: 8px;
+    }
+
+    /* 底部安全区 */
+    .pb-safe {
+      padding-bottom: calc(20px + env(safe-area-inset-bottom));
+    }
+
+    /* 展开动画 */
+    .form-expand-enter-active,
+    .form-expand-leave-active {
+      transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+      overflow: hidden;
+    }
+    .form-expand-enter-from,
+    .form-expand-leave-to {
+      opacity: 0;
+      max-height: 0;
+      margin-bottom: 0;
+    }
+    .form-expand-enter-to,
+    .form-expand-leave-from {
+      opacity: 1;
+      max-height: 500px;
+    }
+
+    /* 复制成功闪烁 */
+    .copy-flash {
+      animation: flashGreen 0.4s ease;
+    }
+    @keyframes flashGreen {
+      0% { background-color: #d1fae5; color: #047857; }
+      100% { background-color: transparent; }
+    }
+
+    /* 加载旋转 */
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+    .spinner {
+      animation: spin 0.8s linear infinite;
+    }
+  </style>
+</head>
+<body class="bg-gray-50/50 min-h-screen pb-safe">
+  <div id="app">
+
+    <!-- 顶部导航栏 -->
+    <div class="bg-white sticky top-0 z-10 border-b border-gray-100 fade-in-up">
+      <div class="flex items-center px-4 h-14">
+        <button
+          @click="goBack"
+          class="w-10 h-10 flex items-center justify-center rounded-full hover:bg-gray-100 btn-press -ml-2"
+        >
+          <svg class="w-5 h-5 text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path>
+          </svg>
+        </button>
+        <h1 class="flex-1 text-center text-base font-semibold text-gray-900 pr-10">卡密管理</h1>
+      </div>
+    </div>
+
+    <!-- 无权限提示 -->
+    <div v-if="authChecked && !isAdmin" class="pt-24 text-center px-6">
+      <div class="text-4xl mb-4">🔒</div>
+      <h3 class="text-lg font-medium text-gray-900 mb-2">您无权访问</h3>
+      <p class="text-gray-500 text-sm">正在返回...</p>
+    </div>
+
+    <template v-else-if="isAdmin">
+
+      <!-- 生成卡密按钮 -->
+      <div class="px-4 py-4">
+        <button
+          @click="showAddForm = !showAddForm"
+          class="btn-press w-full py-3.5 bg-gray-900 text-white rounded-xl font-medium text-sm fade-in-up d1 flex items-center justify-center gap-2"
+        >
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
+          </svg>
+          {{ showAddForm ? '收起' : '生成卡密' }}
+        </button>
+      </div>
+
+      <!-- 生成卡密表单 -->
+      <transition name="form-expand">
+        <div v-if="showAddForm" class="px-4 mb-4">
+          <div class="bg-white rounded-2xl p-5 border border-gray-100 fade-in-up d2">
+            <h3 class="text-base font-semibold text-gray-900 mb-4">批量生成卡密</h3>
+
+            <!-- 面额 -->
+            <div class="mb-4">
+              <label class="block text-xs font-medium text-gray-500 mb-1.5">卡密面额（元） <span class="text-red-500">*</span></label>
+              <input
+                v-model="form.amount"
+                type="number"
+                placeholder="如：100"
+                class="input-field w-full px-3.5 py-3 bg-gray-50 border border-gray-200 rounded-xl text-sm text-gray-900 placeholder-gray-400 outline-none"
+                :class="{ 'border-red-300': formErrors.amount }"
+                @input="formErrors.amount = ''"
+              />
+              <p v-if="formErrors.amount" class="text-red-500 text-xs mt-1">{{ formErrors.amount }}</p>
+            </div>
+
+            <!-- 生成数量 -->
+            <div class="mb-4">
+              <label class="block text-xs font-medium text-gray-500 mb-1.5">生成数量（1-50） <span class="text-red-500">*</span></label>
+              <input
+                v-model="form.count"
+                type="number"
+                placeholder="最多 50 张"
+                class="input-field w-full px-3.5 py-3 bg-gray-50 border border-gray-200 rounded-xl text-sm text-gray-900 placeholder-gray-400 outline-none"
+                :class="{ 'border-red-300': formErrors.count }"
+                @input="formErrors.count = ''; form.count = form.count.replace(/[^\d]/g, '')"
+              />
+              <p v-if="formErrors.count" class="text-red-500 text-xs mt-1">{{ formErrors.count }}</p>
+            </div>
+
+            <!-- 批次号 -->
+            <div class="mb-5">
+              <label class="block text-xs font-medium text-gray-500 mb-1.5">批次号（选填）</label>
+              <input
+                v-model="form.batch"
+                type="text"
+                placeholder="如：2026-05-01 首批"
+                class="input-field w-full px-3.5 py-3 bg-gray-50 border border-gray-200 rounded-xl text-sm text-gray-900 placeholder-gray-400 outline-none"
+              />
+            </div>
+
+            <!-- 生成预览 -->
+            <div v-if="previewCodes.length > 0" class="mb-4 p-3 bg-gray-50 rounded-xl">
+              <p class="text-xs text-gray-500 mb-2">卡密格式预览（前 3 个）：</p>
+              <div class="space-y-1">
+                <p v-for="(c, i) in previewCodes.slice(0, 3)" :key="i" class="text-sm font-mono text-gray-700">{{ c }}</p>
+                <p v-if="previewCodes.length > 3" class="text-xs text-gray-400">... 共 {{ previewCodes.length }} 张</p>
+              </div>
+            </div>
+
+            <!-- 确认生成按钮 -->
+            <button
+              @click="handleGenerate"
+              :disabled="generating"
+              class="btn-press w-full py-3 bg-gray-900 text-white rounded-xl font-medium text-sm disabled:opacity-50"
+            >
+              <span v-if="generating" class="inline-flex items-center gap-2">
+                <svg class="spinner w-4 h-4" viewBox="0 0 24 24" fill="none">
+                  <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                  <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                </svg>
+                生成中...
+              </span>
+              <span v-else>确认生成</span>
+            </button>
+          </div>
+        </div>
+      </transition>
+
+      <!-- 统计条 -->
+      <div v-if="cards.length > 0" class="px-4 mb-3 fade-in-up d3">
+        <div class="flex gap-2">
+          <div class="flex-1 bg-white rounded-xl p-3 border border-gray-100 text-center">
+            <p class="text-lg font-bold text-gray-900">{{ unusedCount }}</p>
+            <p class="text-xs text-gray-400">待使用</p>
+          </div>
+          <div class="flex-1 bg-white rounded-xl p-3 border border-gray-100 text-center">
+            <p class="text-lg font-bold text-green-600">{{ usedCount }}</p>
+            <p class="text-xs text-gray-400">已使用</p>
+          </div>
+          <div class="flex-1 bg-white rounded-xl p-3 border border-gray-100 text-center">
+            <p class="text-lg font-bold text-gray-500">{{ disabledCount }}</p>
+            <p class="text-xs text-gray-400">已禁用</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- 卡密列表 -->
+      <div class="px-4 pb-4">
+        <div class="flex items-center justify-between mb-3 fade-in-up d3">
+          <h2 class="text-sm font-medium text-gray-900">全部卡密</h2>
+          <span class="text-xs text-gray-400">共 {{ cards.length }} 张</span>
+        </div>
+
+        <!-- 加载骨架 -->
+        <div v-if="loading" class="space-y-2">
+          <div v-for="i in 5" :key="i" class="bg-white rounded-xl p-3 border border-gray-100 fade-in-up" :class="'d' + Math.min(i + 2, 7)">
+            <div class="flex justify-between items-center">
+              <div class="skeleton h-5 w-36"></div>
+              <div class="skeleton h-5 w-10"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 空状态 -->
+        <div v-else-if="cards.length === 0" class="text-center py-12 fade-in-up d3">
+          <div class="text-4xl mb-3">🎫</div>
+          <p class="text-gray-500 text-sm">暂无卡密，点击上方生成</p>
+        </div>
+
+        <!-- 卡密列表 -->
+        <div v-else class="space-y-2">
+          <div
+            v-for="(card, idx) in cards"
+            :key="card.id"
+            class="bg-white rounded-xl p-3 border border-gray-100 fade-in-up"
+            :class="'d' + Math.min((idx % 5) + 3, 7)"
+          >
+            <!-- 卡密 + 复制按钮 -->
+            <div class="flex items-center justify-between mb-2">
+              <span class="font-mono text-sm font-medium text-gray-900 tracking-wide">{{ card.code }}</span>
+              <button
+                @click="copyCode(card.code, card.id)"
+                class="btn-press flex items-center gap-1 px-2.5 py-1 bg-gray-100 hover:bg-gray-200 rounded-lg text-xs text-gray-600"
+                :class="{ 'copy-flash': copiedId === card.id }"
+              >
+                <svg v-if="copiedId !== card.id" class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path>
+                </svg>
+                <span>{{ copiedId === card.id ? '已复制' : '复制' }}</span>
+              </button>
+            </div>
+
+            <!-- 面额 + 状态 + 时间 -->
+            <div class="flex items-center justify-between text-xs">
+              <div class="flex items-center gap-3">
+                <span class="font-bold text-gray-900">¥{{ card.amount.toFixed(0) }}</span>
+                <span
+                  class="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium"
+                  :class="statusClass(card.status)"
+                >
+                  {{ statusText(card.status) }}
+                </span>
+              </div>
+              <span class="text-gray-400">{{ formatTime(card.created_at) }}</span>
+            </div>
+
+            <!-- 批次号 -->
+            <p v-if="card.batch_no" class="text-[11px] text-gray-300 mt-1.5">批次：{{ card.batch_no }}</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- 版权页脚 -->
+      <div class="text-center px-6 pt-4 fade-in-up d8">
+        <p class="text-sm text-gray-700 font-medium mb-1">希皓电竞</p>
+        <p class="text-xs text-gray-400 mb-1">希皓网游 提供技术支持</p>
+        <p class="text-[11px] text-gray-300 leading-relaxed">
+          Copyright © 2026 希皓电竞 All Rights Reserved.<br>
+          最终解释权归希皓电竞所有。
+        </p>
+      </div>
+
+    </template>
+
+  </div>
+
+  <script>
+    const { createApp, ref, reactive, computed, onMounted } = Vue;
+
+    const SUPABASE_URL = 'https://cvcerkgcstvnqiqsmkj.supabase.co';
+    const SUPABASE_ANON_KEY = 'sb_publishable_H9iztdbCiT4xu566vfIQ8Q_d66u1_aQ';
+
+    const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+    createApp({
+      setup() {
+        const cards = ref([]);
+        const loading = ref(true);
+        const isAdmin = ref(false);
+        const authChecked = ref(false);
+        const showAddForm = ref(false);
+        const generating = ref(false);
+        const copiedId = ref(null);
+
+        const form = reactive({
+          amount: '',
+          count: '',
+          batch: ''
+        });
+
+        const formErrors = reactive({
+          amount: '',
+          count: ''
+        });
+
+        // 统计
+        const unusedCount = computed(() => cards.value.filter(c => c.status === 'unused').length);
+        const usedCount = computed(() => cards.value.filter(c => c.status === 'used').length);
+        const disabledCount = computed(() => cards.value.filter(c => c.status === 'disabled').length);
+
+        // 卡密格式预览
+        const previewCodes = computed(() => {
+          const n = parseInt(form.count);
+          if (!n || n <= 0) return [];
+          const count = Math.min(n, 10);
+          const codes = [];
+          for (let i = 0; i < count; i++) {
+            codes.push(generateCardCode());
+          }
+          return codes;
+        });
+
+        // 生成随机卡密：HP-XXXX-XXXX-XXXX
+        const generateCardCode = () => {
+          const chars = 'ABCDEFGHIJKLMNPQRSTUVWXYZ23456789'; // 去掉易混淆的 O/0/1/I
+          const segment = () => {
+            let s = '';
+            for (let i = 0; i < 4; i++) {
+              s += chars.charAt(Math.floor(Math.random() * chars.length));
+            }
+            return s;
+          };
+          return `HP-${segment()}-${segment()}-${segment()}`;
+        };
+
+        // 检查登录
+        const checkAuth = () => {
+          const token = localStorage.getItem('access_token');
+          if (!token) {
+            window.location.href = 'client-login.html';
+            return false;
+          }
+          return true;
+        };
+
+        // 检查管理员权限
+        const checkAdmin = async () => {
+          try {
+            const userId = localStorage.getItem('user_id');
+            const { data, error } = await supabase
+              .from('profiles')
+              .select('role')
+              .eq('id', userId)
+              .single();
+
+            if (error) throw error;
+            isAdmin.value = data?.role === 'admin';
+
+            if (!isAdmin.value) {
+              setTimeout(() => {
+                window.location.href = 'client-home.html';
+              }, 2000);
+            }
+          } catch (err) {
+            console.error('权限检查失败:', err);
+            isAdmin.value = false;
+            setTimeout(() => {
+              window.location.href = 'client-home.html';
+            }, 2000);
+          } finally {
+            authChecked.value = true;
+          }
+        };
+
+        // 获取卡密列表
+        const fetchCards = async () => {
+          loading.value = true;
+          try {
+            const { data, error } = await supabase
+              .from('cards')
+              .select('id, code, amount, status, batch_no, created_at')
+              .order('created_at', { ascending: false })
+              .limit(100);
+
+            if (error) throw error;
+            cards.value = data || [];
+          } catch (err) {
+            console.error('获取卡密失败:', err);
+            cards.value = [];
+          } finally {
+            loading.value = false;
+          }
+        };
+
+        // 状态文本
+        const statusText = (status) => {
+          const map = {
+            unused: '待使用',
+            used: '已使用',
+            disabled: '已禁用'
+          };
+          return map[status] || status;
+        };
+
+        // 状态样式
+        const statusClass = (status) => {
+          const map = {
+            unused: 'bg-amber-50 text-amber-700',
+            used: 'bg-green-50 text-green-700',
+            disabled: 'bg-gray-100 text-gray-500'
+          };
+          return map[status] || 'bg-gray-100 text-gray-500';
+        };
+
+        // 格式化时间
+        const formatTime = (dateStr) => {
+          if (!dateStr) return '';
+          const d = new Date(dateStr);
+          const now = new Date();
+          const sameDay = d.toDateString() === now.toDateString();
+
+          const pad = (n) => n.toString().padStart(2, '0');
+
+          if (sameDay) {
+            return `今天 ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+          }
+
+          const yesterday = new Date(now);
+          yesterday.setDate(yesterday.getDate() - 1);
+          if (d.toDateString() === yesterday.toDateString()) {
+            return `昨天 ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+          }
+
+          return `${d.getMonth() + 1}/${d.getDate()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+        };
+
+        // 校验表单
+        const validateForm = () => {
+          let valid = true;
+
+          if (!form.amount || parseFloat(form.amount) <= 0) {
+            formErrors.amount = '请输入有效面额';
+            valid = false;
+          }
+
+          const count = parseInt(form.count);
+          if (!count || count < 1) {
+            formErrors.count = '请输入生成数量';
+            valid = false;
+          } else if (count > 50) {
+            formErrors.count = '单次最多生成 50 张';
+            valid = false;
+          }
+
+          return valid;
+        };
+
+        // 批量生成卡密
+        const handleGenerate = async () => {
+          if (!validateForm()) return;
+
+          const count = parseInt(form.count);
+          const amount = parseFloat(form.amount);
+          const batchNo = form.batch.trim() || null;
+
+          generating.value = true;
+          try {
+            // 生成卡密
+            const insertData = [];
+            for (let i = 0; i < count; i++) {
+              insertData.push({
+                code: generateCardCode(),
+                amount: amount,
+                status: 'unused',
+                batch_no: batchNo
+              });
+            }
+
+            const { error } = await supabase
+              .from('cards')
+              .insert(insertData);
+
+            if (error) throw error;
+
+            // 成功：重置、收起、刷新
+            form.amount = '';
+            form.count = '';
+            form.batch = '';
+            showAddForm.value = false;
+            fetchCards();
+            alert(`成功生成 ${count} 张卡密`);
+          } catch (err) {
+            console.error('生成失败:', err);
+            alert(err.message || '生成失败，请重试');
+          } finally {
+            generating.value = false;
+          }
+        };
+
+        // 复制卡密
+        const copyCode = async (code, id) => {
+          try {
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+              await navigator.clipboard.writeText(code);
+            } else {
+              // 降级方案
+              const textarea = document.createElement('textarea');
+              textarea.value = code;
+              textarea.style.position = 'fixed';
+              textarea.style.opacity = '0';
+              document.body.appendChild(textarea);
+              textarea.select();
+              document.execCommand('copy');
+              document.body.removeChild(textarea);
+            }
+            copiedId.value = id;
+            setTimeout(() => {
+              copiedId.value = null;
+            }, 1200);
+          } catch (err) {
+            console.error('复制失败:', err);
+            alert('复制失败，请手动复制');
+          }
+        };
+
+        // 返回
+        const goBack = () => {
+          window.location.href = 'admin-home.html';
+        };
+
+        onMounted(async () => {
+          if (!checkAuth()) return;
+          await checkAdmin();
+          if (isAdmin.value) {
+            fetchCards();
+          }
+        });
+
+        return {
+          cards,
+          loading,
+          isAdmin,
+          authChecked,
+          showAddForm,
+          generating,
+          copiedId,
+          form,
+          formErrors,
+          previewCodes,
+          unusedCount,
+          usedCount,
+          disabledCount,
+          statusText,
+          statusClass,
+          formatTime,
+          handleGenerate,
+          copyCode,
+          goBack
+        };
+      }
+    }).mount('#app');
+  </script>
+</body>
+</html>
